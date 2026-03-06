@@ -1,0 +1,58 @@
+{
+  "name": "image-annotation-drawer",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "A lightweight image annotation library based on HTML5 Canvas, supporting rectangles, polygons, text annotations, zoom and drag operations.",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rollup -c",
+    "build:types": "tsc --declaration --emitDeclarationOnly --outDir dist",
+    "test": "jest --config jest.config.cjs",
+    "test:watch": "jest --config jest.config.cjs --watch",
+    "test:coverage": "jest --config jest.config.cjs --coverage",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "prepublishOnly": "npm run build && npm run build:types",
+    "dev": "rollup -c -w"
+  },
+  "keywords": [
+    "image-annotation",
+    "canvas",
+    "drawing",
+    "annotation",
+    "rect",
+    "polygon",
+    "text-annotation",
+    "zoom",
+    "drag"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "bugs": {
+    "url": ""
+  },
+  "homepage": "",
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@types/jest": "^29.5.12",
+    "@typescript-eslint/eslint-plugin": "^7.1.0",
+    "@typescript-eslint/parser": "^7.1.0",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "rollup": "^4.12.0",
+    "rollup-plugin-dts": "^6.1.0",
+    "ts-jest": "^29.1.2",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3"
+  }
+}
