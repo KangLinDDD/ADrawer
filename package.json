@@ -18,7 +18,8 @@
     "README.md",
     "README.zh-CN.md",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "CONTRIBUTING.md"
   ],
   "scripts": {
     "build": "rollup -c",
@@ -42,7 +43,7 @@
     "zoom",
     "drag"
   ],
-  "author": "KangLin <your.email@example.com>",
+  "author": "KangLin",
   "license": "MIT",
   "repository": {
     "type": "git",
