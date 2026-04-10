@@ -268,7 +268,8 @@ const drawer = new Drawer(options);
 
 ## Examples
 
-- **Live Demo**: https://kanglinddd.github.io/ADrawer/
+- **Live Demo (English)**: https://kanglinddd.github.io/ADrawer/
+- **在线演示 (中文)**: https://kanglinddd.github.io/ADrawer/zh.html
 - **Source**: See the `examples/` directory for complete working examples.
 
 ## Contributing

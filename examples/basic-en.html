@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Annotation Drawer - Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; background: #f5f5f5; }
+    .container { max-width: 1400px; margin: 0 auto; }
+    h1 { margin-bottom: 10px; }
+    .subtitle { color: #666; margin-bottom: 20px; }
+    .toolbar { margin-bottom: 20px; padding: 15px; background: white; border-radius: 8px; display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-start; }
+    .toolbar-section { display: flex; flex-direction: column; gap: 8px; }
+    .toolbar-section:not(:last-child) { padding-right: 15px; border-right: 1px solid #ddd; }
+    .toolbar-row { display: flex; gap: 10px; align-items: center; }
+    .toolbar button { padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .toolbar button:hover { background: #f0f0f0; }
+    .toolbar button.active { background: #007bff; color: white; border-color: #007bff; }
+    .toolbar button.apply-style { background: #28a745; color: white; border-color: #28a745; }
+    .toolbar button.apply-style:hover { background: #218838; }
+    .toolbar button.apply-style:disabled { background: #ccc; border-color: #ccc; cursor: not-allowed; }
+    .toolbar select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .color-picker-wrapper { display: flex; align-items: center; gap: 8px; }
+    .color-picker-wrapper label { font-size: 13px; color: #333; white-space: nowrap; }
+    .color-picker {
+      width: 36px;
+      height: 28px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      cursor: pointer;
+      padding: 0;
+      background: none;
+    }
+    .color-picker::-webkit-color-swatch-wrapper { padding: 2px; }
+    .color-picker::-webkit-color-swatch { border: none; border-radius: 2px; }
+    .main-content { display: flex; gap: 20px; }
+    .canvas-wrapper {
+      flex: 1;
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      min-height: 600px;
+    }
+    #canvas-container {
+      width: 100%;
+      height: 600px;
+      background: #f8f9fa;
+      border: 2px dashed #ddd;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .placeholder-text {
+      color: #999;
+      font-size: 16px;
+    }
+    .sidebar {
+      width: 300px;
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .sidebar h3 {
+      margin-bottom: 15px;
+      font-size: 16px;
+      color: #333;
+    }
+    .sidebar-section {
+      margin-bottom: 20px;
+    }
+    .sidebar-section h4 {
+      margin-bottom: 10px;
+      font-size: 14px;
+      color: #666;
+    }
+    .shortcut-list {
+      list-style: none;
+    }
+    .shortcut-list li {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+      font-size: 13px;
+    }
+    .shortcut-list li:last-child { border-bottom: none; }
+    .shortcut-key {
+      background: #f0f0f0;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .api-list {
+      list-style: none;
+      font-size: 13px;
+    }
+    .api-list li {
+      padding: 6px 0;
+      border-bottom: 1px solid #eee;
+      font-family: monospace;
+      color: #333;
+    }
+    .api-list li:last-child { border-bottom: none; }
+    .language-switch {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+    }
+    .language-switch a {
+      color: #007bff;
+      text-decoration: none;
+    }
+    .language-switch a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="language-switch">
+    <a href="./basic.html">中文</a> | <strong>English</strong>
+  </div>
+
+  <div class="container">
+    <h1>🎨 Image Annotation Drawer</h1>
+    <p class="subtitle">A lightweight, dependency-free image annotation library for the web</p>
+
+    <div class="toolbar">
+      <!-- Draw Type -->
+      <div class="toolbar-section">
+        <label>Draw Type</label>
+        <div class="toolbar-row">
+          <button id="btn-rect" onclick="setDrawType('rect')">Rectangle</button>
+          <button id="btn-polygon" onclick="setDrawType('polygon')">Polygon</button>
+          <button id="btn-text" onclick="setDrawType('text')">Text</button>
+          <button id="btn-drag" onclick="setDrawType('drag')">Drag</button>
+        </div>
+      </div>
+
+      <!-- Style Settings -->
+      <div class="toolbar-section">
+        <label>Style Settings</label>
+        <div class="toolbar-row">
+          <div class="color-picker-wrapper">
+            <label>Color:</label>
+            <input type="color" id="color-picker" class="color-picker" value="#FF0000" onchange="updateColor(this.value)">
+          </div>
+          <select id="line-style" onchange="updateLineStyle(this.value)">
+            <option value="solid">Solid</option>
+            <option value="dashed">Dashed</option>
+            <option value="dotted">Dotted</option>
+          </select>
+          <button id="btn-apply-style" class="apply-style" onclick="applyStyle()" disabled>Apply to Selected</button>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="toolbar-section">
+        <label>Actions</label>
+        <div class="toolbar-row">
+          <button onclick="clearAnnotations()">Clear All</button>
+          <button onclick="withdraw()">Undo</button>
+          <button onclick="exportImage()">Export</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="canvas-wrapper">
+        <div id="canvas-container">
+          <div class="placeholder-text">Loading...</div>
+        </div>
+      </div>
+
+      <div class="sidebar">
+        <div class="sidebar-section">
+          <h3>📖 Instructions</h3>
+          <ul class="shortcut-list">
+            <li><span>Draw Rectangle</span><span class="shortcut-key">Click & Drag</span></li>
+            <li><span>Draw Polygon</span><span class="shortcut-key">Click points, Double-click to finish</span></li>
+            <li><span>Add Text</span><span class="shortcut-key">Click to place</span></li>
+            <li><span>Select/Move</span><span class="shortcut-key">Click annotation</span></li>
+            <li><span>Pan Image</span><span class="shortcut-key">Drag mode</span></li>
+            <li><span>Zoom</span><span class="shortcut-key">Mouse wheel</span></li>
+          </ul>
+        </div>
+
+        <div class="sidebar-section">
+          <h3>⌨️ Keyboard Shortcuts</h3>
+          <ul class="shortcut-list">
+            <li><span>Reset View</span><span class="shortcut-key">Space</span></li>
+            <li><span>Cancel/Deselect</span><span class="shortcut-key">ESC</span></li>
+            <li><span>Delete Selected</span><span class="shortcut-key">Delete</span></li>
+            <li><span>Undo Delete</span><span class="shortcut-key">Ctrl+Z</span></li>
+          </ul>
+        </div>
+
+        <div class="sidebar-section">
+          <h3>📚 API Quick Reference</h3>
+          <ul class="api-list">
+            <li>drawer.setDrawType(type)</li>
+            <li>drawer.drawImage(url)</li>
+            <li>drawer.getAnnotations()</li>
+            <li>drawer.exportAnnotationImage()</li>
+            <li>drawer.clearAnnotations()</li>
+            <li>drawer.withdraw()</li>
+          </ul>
+        </div>
+
+        <div class="sidebar-section">
+          <h3>🔗 Links</h3>
+          <ul class="api-list">
+            <li><a href="https://github.com/KangLinDDD/ADrawer" target="_blank">GitHub Repository</a></li>
+            <li><a href="https://www.npmjs.com/package/image-annotation-drawer" target="_blank">npm Package</a></li>
+            <li><a href="./basic.html">中文演示</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import Drawer from '../dist/index.esm.js';
+
+    const drawer = new Drawer({
+      id: 'canvas-container',
+      drawType: 'rect',
+      annotationColor: '#FF0000'
+    });
+
+    // Load sample image
+    drawer.drawImage('https://picsum.photos/800/600');
+
+    // Expose functions to window for button onclick
+    window.setDrawType = (type) => {
+      drawer.setDrawType(type);
+      updateActiveButton(type);
+    };
+
+    window.updateColor = (color) => {
+      drawer.setAnnotationColor(color);
+    };
+
+    window.updateLineStyle = (style) => {
+      drawer.setLineStyle(style);
+    };
+
+    window.applyStyle = () => {
+      drawer.updateSelectedAnnotationStyle();
+    };
+
+    window.clearAnnotations = () => {
+      drawer.clearAnnotations();
+    };
+
+    window.withdraw = () => {
+      drawer.withdraw();
+    };
+
+    window.exportImage = () => {
+      drawer.exportAnnotationImage().then(base64 => {
+        const link = document.createElement('a');
+        link.download = 'annotation.png';
+        link.href = base64;
+        link.click();
+      }).catch(err => {
+        // Fallback to current view
+        drawer.exportCurrentViewImage().then(base64 => {
+          const link = document.createElement('a');
+          link.download = 'annotation.png';
+          link.href = base64;
+          link.click();
+        });
+      });
+    };
+
+    // Update active button state
+    function updateActiveButton(type) {
+      document.querySelectorAll('.toolbar button').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      const btn = document.getElementById(`btn-${type}`);
+      if (btn) btn.classList.add('active');
+
+      // Enable/disable apply style button
+      const applyBtn = document.getElementById('btn-apply-style');
+      applyBtn.disabled = (type !== '');
+    }
+
+    // Listen for selection changes
+    const checkSelection = setInterval(() => {
+      const selected = drawer.getSelectedAnnotation();
+      const applyBtn = document.getElementById('btn-apply-style');
+      applyBtn.disabled = !selected;
+    }, 200);
+
+    // Initial state
+    document.getElementById('btn-rect').classList.add('active');
+  </script>
+</body>
+</html>
