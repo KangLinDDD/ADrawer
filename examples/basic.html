@@ -249,9 +249,10 @@
     </div>
   </div>
 
-  <script src="../dist/index.js"></script>
-  <script>
-    const drawer = new ImageAnnotationDrawer({
+  <script type="module">
+    import Drawer from '../dist/index.esm.js';
+    
+    const drawer = new Drawer({
       id: 'canvas-container',
       drawType: 'rect',
       annotationColor: '#FF0000'

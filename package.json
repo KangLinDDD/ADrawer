@@ -16,7 +16,9 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "README.zh-CN.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "rollup -c",
@@ -40,16 +42,16 @@
     "zoom",
     "drag"
   ],
-  "author": "Your Name <your.email@example.com>",
+  "author": "KangLin <your.email@example.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/image-annotation-drawer.git"
+    "url": "git+https://github.com/KangLinDDD/ADrawer.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/image-annotation-drawer/issues"
+    "url": "https://github.com/KangLinDDD/ADrawer/issues"
   },
-  "homepage": "https://github.com/yourusername/image-annotation-drawer#readme",
+  "homepage": "https://kanglinddd.github.io/ADrawer/",
   "engines": {
     "node": ">=14.0.0"
   },
