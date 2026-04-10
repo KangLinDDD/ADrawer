@@ -6,8 +6,17 @@
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "rollup -c",
@@ -31,16 +40,23 @@
     "zoom",
     "drag"
   ],
-  "author": "",
+  "author": "Your Name <your.email@example.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git+https://github.com/yourusername/image-annotation-drawer.git"
   },
   "bugs": {
-    "url": ""
+    "url": "https://github.com/yourusername/image-annotation-drawer/issues"
   },
-  "homepage": "",
+  "homepage": "https://github.com/yourusername/image-annotation-drawer#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "devDependencies": {
     "@rollup/plugin-typescript": "^11.1.6",
     "@types/jest": "^29.5.12",

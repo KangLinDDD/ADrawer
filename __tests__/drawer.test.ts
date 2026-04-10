@@ -293,8 +293,8 @@ describe('Annotation Selection and Movement', () => {
   });
 
   it('should select and deselect annotation', () => {
-    // 添加一个矩形标注（通过 API 直接添加）
-    drawer['recordList'].push({
+    // 添加一个矩形标注（通过 AnnotationManager 添加）
+    drawer['annotationManager'].recordList.push({
       type: 'rect',
       data: [{ start: { x: 100, y: 100 }, width: 100, height: 100 }],
       status: 'fullfilled'
@@ -317,12 +317,12 @@ describe('Annotation Selection and Movement', () => {
 
   it('should delete selected annotation', () => {
     // 添加两个标注
-    drawer['recordList'].push({
+    drawer['annotationManager'].recordList.push({
       type: 'rect',
       data: [{ start: { x: 100, y: 100 }, width: 100, height: 100 }],
       status: 'fullfilled'
     });
-    drawer['recordList'].push({
+    drawer['annotationManager'].recordList.push({
       type: 'rect',
       data: [{ start: { x: 300, y: 300 }, width: 50, height: 50 }],
       status: 'fullfilled'
@@ -339,7 +339,7 @@ describe('Annotation Selection and Movement', () => {
 
   it('should move selected annotation', () => {
     // 添加一个矩形标注
-    drawer['recordList'].push({
+    drawer['annotationManager'].recordList.push({
       type: 'rect',
       data: [{ start: { x: 100, y: 100 }, width: 100, height: 100 }],
       status: 'fullfilled'
@@ -358,8 +358,8 @@ describe('Annotation Selection and Movement', () => {
   it('should detect point in rect', () => {
     const rect: Rect = { start: { x: 100, y: 100 }, width: 100, height: 100 };
     
-    // 使用私有方法测试
-    const isPointInRect = (drawer as any)['isPointInRect'].bind(drawer);
+    // 使用工具函数测试
+    const { isPointInRect } = require('../src/modules/utils');
     
     expect(isPointInRect({ x: 150, y: 150 }, rect)).toBe(true); // 内部
     expect(isPointInRect({ x: 50, y: 50 }, rect)).toBe(false); // 外部
@@ -375,7 +375,8 @@ describe('Annotation Selection and Movement', () => {
       { point: { x: 100, y: 200 } }
     ];
 
-    const isPointInPolygon = (drawer as any)['isPointInPolygon'].bind(drawer);
+    // 使用工具函数测试
+    const { isPointInPolygon } = require('../src/modules/utils');
 
     expect(isPointInPolygon({ x: 150, y: 150 }, polygon)).toBe(true); // 内部
     expect(isPointInPolygon({ x: 50, y: 50 }, polygon)).toBe(false); // 外部
@@ -385,7 +386,8 @@ describe('Annotation Selection and Movement', () => {
     // 从右下往左上画的矩形
     const rect: Rect = { start: { x: 200, y: 200 }, width: -100, height: -100 };
     
-    const isPointInRect = (drawer as any)['isPointInRect'].bind(drawer);
+    // 使用工具函数测试
+    const { isPointInRect } = require('../src/modules/utils');
     
     expect(isPointInRect({ x: 150, y: 150 }, rect)).toBe(true); // 内部
     expect(isPointInRect({ x: 250, y: 250 }, rect)).toBe(false); // 外部
@@ -393,7 +395,7 @@ describe('Annotation Selection and Movement', () => {
 
   it('should deselect when switching draw type', () => {
     // 添加并选中标注
-    drawer['recordList'].push({
+    drawer['annotationManager'].recordList.push({
       type: 'rect',
       data: [{ start: { x: 100, y: 100 }, width: 100, height: 100 }],
       status: 'fullfilled'

@@ -10,6 +10,9 @@ const config = [
       format: 'umd',
       name: 'ImageAnnotationDrawer',
       sourcemap: true,
+      extend: true,
+      exports: 'named',
+      footer: 'if (typeof ImageAnnotationDrawer !== "undefined" && ImageAnnotationDrawer.default) { ImageAnnotationDrawer = ImageAnnotationDrawer.default; }',
     },
     plugins: [
       typescript({
