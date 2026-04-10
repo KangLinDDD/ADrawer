@@ -5,12 +5,8 @@
 
 import type { 
   Rect, 
-  Polygon, 
-  TextAnnotation, 
-  TextStyle, 
+  Polygon,
   SelectionStyle,
-  Operate,
-  AnnotationStyle,
   LineStyle,
   VertexStyle
 } from './types'
@@ -129,7 +125,7 @@ export class Renderer {
    * @param rect - 矩形数据
    * @param isSelected - 是否被选中（用于顶点颜色）
    */
-  private drawRect(rect: Rect, isSelected: boolean = false): void {
+  private drawRect(rect: Rect, _isSelected: boolean = false): void {
     this.ctx.strokeRect(
       this.viewport.offset.x + rect.start.x * this.viewport.scale,
       this.viewport.offset.y + rect.start.y * this.viewport.scale,
@@ -520,8 +516,8 @@ export class Renderer {
 
       // 绘制背景
       ctx.fillStyle = textStyle.backgroundColor
-      if ((ctx as any).roundRect) {
-        ;(ctx as any).roundRect(bgX, bgY, bgWidth, bgHeight, r)
+      if ((ctx as unknown as { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect) {
+        (ctx as unknown as { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect(bgX, bgY, bgWidth, bgHeight, r)
         ctx.fill()
       } else {
         ctx.fillRect(bgX, bgY, bgWidth, bgHeight)

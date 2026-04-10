@@ -8,7 +8,7 @@ import type { ViewportManager } from './viewport'
 import type { AnnotationManager } from './annotations'
 import type { TextAnnotationManager } from './text-annotation'
 import type { Renderer } from './renderer'
-import { getZoomDelta } from './utils'
+// getZoomDelta is imported in index.ts
 
 export class EventHandler {
   // 拖拽状态
@@ -786,7 +786,7 @@ export class EventHandler {
   /**
    * 处理鼠标释放
    */
-  handleMouseUp(e: MouseEvent): void {
+  handleMouseUp(_e: MouseEvent): void {
     if (this.isDragging) {
       this.isDragging = false
       const drawType = this.getDrawType()

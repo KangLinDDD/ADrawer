@@ -7,8 +7,7 @@ import type {
   Rect, 
   Polygon, 
   Point, 
-  Operate, 
-  Shape, 
+  Operate,
   SelectedAnnotation, 
   ActiveHandle,
   SelectionStyle,
@@ -436,7 +435,7 @@ export class AnnotationManager {
   /**
    * 开始调整大小
    */
-  startResizing(handle: ActiveHandle, startPoint: Point): boolean {
+  startResizing(handle: ActiveHandle, _startPoint: Point): boolean {
     if (!this.selectedAnnotation) return false
 
     this.activeHandle = handle

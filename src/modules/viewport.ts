@@ -3,7 +3,7 @@
  * 负责视口尺寸、缩放、偏移、边界约束等视图相关功能
  */
 
-import type { ViewportSize, ViewportOffset } from './types'
+import type { ViewportOffset } from './types'
 
 export class ViewportManager {
   // 视口尺寸
@@ -93,10 +93,10 @@ export class ViewportManager {
 
     // 确保最小值不大于最大值
     if (this.minOffsetX > this.maxOffsetX) {
-      ;[this.minOffsetX, this.maxOffsetX] = [this.maxOffsetX, this.minOffsetX]
+      [this.minOffsetX, this.maxOffsetX] = [this.maxOffsetX, this.minOffsetX]
     }
     if (this.minOffsetY > this.maxOffsetY) {
-      ;[this.minOffsetY, this.maxOffsetY] = [this.maxOffsetY, this.minOffsetY]
+      [this.minOffsetY, this.maxOffsetY] = [this.maxOffsetY, this.minOffsetY]
     }
   }
 
