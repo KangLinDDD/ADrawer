@@ -406,6 +406,17 @@
 
     // 初始状态
     document.getElementById('btn-rect').classList.add('active');
+
+    // 将函数和实例暴露到全局，以便 HTML 中的 onclick/onchange 调用
+    window.drawer = drawer;
+    window.setMode = setMode;
+    window.updateLineStyle = updateLineStyle;
+    window.updateLineWidth = updateLineWidth;
+    window.updateVertexStyle = updateVertexStyle;
+    window.updateTextStyle = updateTextStyle;
+    window.updateInputStyle = updateInputStyle;
+    window.updateSelectionStyle = updateSelectionStyle;
+    window.applyStyleToSelected = applyStyleToSelected;
   </script>
 </body>
 </html>
