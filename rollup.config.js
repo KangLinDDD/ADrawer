@@ -1,5 +1,6 @@
 import typescript from '@rollup/plugin-typescript';
 import dts from 'rollup-plugin-dts';
+import terser from '@rollup/plugin-terser';
 
 const config = [
   // UMD build
@@ -9,7 +10,7 @@ const config = [
       file: 'dist/index.js',
       format: 'umd',
       name: 'ImageAnnotationDrawer',
-      sourcemap: true,
+      sourcemap: false,
       extend: true,
       exports: 'named',
       footer: 'if (typeof ImageAnnotationDrawer !== "undefined" && ImageAnnotationDrawer.default) { ImageAnnotationDrawer = ImageAnnotationDrawer.default; }',
@@ -19,6 +20,7 @@ const config = [
         tsconfig: './tsconfig.json',
         declaration: false,
       }),
+      terser(),
     ],
   },
   // ES Module build
@@ -27,13 +29,14 @@ const config = [
     output: {
       file: 'dist/index.esm.js',
       format: 'es',
-      sourcemap: true,
+      sourcemap: false,
     },
     plugins: [
       typescript({
         tsconfig: './tsconfig.json',
         declaration: false,
       }),
+      terser(),
     ],
   },
   // Type definitions

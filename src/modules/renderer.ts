@@ -145,8 +145,8 @@ export class Renderer {
 
     this.ctx.beginPath()
     polygon.forEach((point, index) => {
-      const x = this.viewport.offset.x + point.point.x * this.viewport.scale
-      const y = this.viewport.offset.y + point.point.y * this.viewport.scale
+      const x = Math.round(this.viewport.offset.x + point.point.x * this.viewport.scale)
+      const y = Math.round(this.viewport.offset.y + point.point.y * this.viewport.scale)
       if (index === 0) {
         this.ctx.moveTo(x, y)
       } else {
@@ -178,8 +178,8 @@ export class Renderer {
     const size = style.size / 2
     
     polygon.forEach((point) => {
-      const x = this.viewport.offset.x + point.point.x * this.viewport.scale
-      const y = this.viewport.offset.y + point.point.y * this.viewport.scale
+      const x = Math.round(this.viewport.offset.x + point.point.x * this.viewport.scale)
+      const y = Math.round(this.viewport.offset.y + point.point.y * this.viewport.scale)
       
       this.ctx.fillStyle = style.fillColor
       this.ctx.strokeStyle = style.strokeColor
@@ -220,8 +220,8 @@ export class Renderer {
 
     this.ctx.beginPath()
     data.forEach((point, index) => {
-      const x = this.viewport.offset.x + point.point.x * this.viewport.scale
-      const y = this.viewport.offset.y + point.point.y * this.viewport.scale
+      const x = Math.round(this.viewport.offset.x + point.point.x * this.viewport.scale)
+      const y = Math.round(this.viewport.offset.y + point.point.y * this.viewport.scale)
       if (index === 0) {
         this.ctx.moveTo(x, y)
       } else {
@@ -231,8 +231,8 @@ export class Renderer {
 
     // 绘制到临时点
     if (tempPoint) {
-      const x = this.viewport.offset.x + tempPoint.x * this.viewport.scale
-      const y = this.viewport.offset.y + tempPoint.y * this.viewport.scale
+      const x = Math.round(this.viewport.offset.x + tempPoint.x * this.viewport.scale)
+      const y = Math.round(this.viewport.offset.y + tempPoint.y * this.viewport.scale)
       this.ctx.lineTo(x, y)
     }
 
@@ -244,8 +244,8 @@ export class Renderer {
     // 绘制临时点标记
     if (tempPoint) {
       const vertexStyle = this.annotationManager.getVertexStyle()
-      const x = this.viewport.offset.x + tempPoint.x * this.viewport.scale
-      const y = this.viewport.offset.y + tempPoint.y * this.viewport.scale
+      const x = Math.round(this.viewport.offset.x + tempPoint.x * this.viewport.scale)
+      const y = Math.round(this.viewport.offset.y + tempPoint.y * this.viewport.scale)
       const size = vertexStyle.size / 2
       
       this.ctx.fillStyle = vertexStyle.fillColor
@@ -363,8 +363,8 @@ export class Renderer {
     this.ctx.fillStyle = style.handleColor
     this.ctx.setLineDash([])
     polygon.forEach((p) => {
-      const x = this.viewport.offset.x + p.point.x * this.viewport.scale
-      const y = this.viewport.offset.y + p.point.y * this.viewport.scale
+      const x = Math.round(this.viewport.offset.x + p.point.x * this.viewport.scale)
+      const y = Math.round(this.viewport.offset.y + p.point.y * this.viewport.scale)
       this.ctx.fillRect(x - handleSize / 2, y - handleSize / 2, handleSize, handleSize)
     })
   }
