@@ -291,6 +291,21 @@ export class Drawer {
   }
 
   /**
+   * 调整 canvas 尺寸以适配容器大小变化
+   */
+  public resize(): void {
+    const container = this.canvas.parentElement
+    if (!container) return
+
+    this.viewport.setSize(container.clientWidth, container.clientHeight)
+    this.canvas.width = this.viewport.width
+    this.canvas.height = this.viewport.height
+    this.canvas.style.width = `${this.viewport.width}px`
+    this.canvas.style.height = `${this.viewport.height}px`
+    this.render()
+  }
+
+  /**
    * 绑定事件监听器
    */
   public addEventListeners(): void {

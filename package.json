@@ -1,7 +1,7 @@
 {
   "name": "image-annotation-drawer",
   "type": "module",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A lightweight image annotation library based on HTML5 Canvas, supporting rectangles, polygons, text annotations, zoom and drag operations.",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
@@ -29,7 +29,7 @@
     "test:coverage": "jest --config jest.config.cjs --coverage",
     "lint": "eslint --ext .ts src/",
     "lint:fix": "eslint --ext .ts src/ --fix",
-    "prepublishOnly": "npm run build && npm run build:types",
+    "prepublishOnly": "npm run build && npm run build:types && rm -rf dist/modules dist/*.map",
     "dev": "rollup -c -w"
   },
   "keywords": [
