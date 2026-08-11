@@ -8,7 +8,8 @@ import type {
   Polygon,
   SelectionStyle,
   LineStyle,
-  VertexStyle
+  VertexStyle,
+  Operate
 } from './types'
 import type { ViewportManager } from './viewport'
 import type { AnnotationManager } from './annotations'
@@ -78,6 +79,11 @@ export class Renderer {
         // 使用标注保存的顶点样式
         const vertexStyle = style.vertexStyle || this.annotationManager.getVertexStyle()
         this.drawPolygon(item.data as Polygon[], item.status === "fullfilled", vertexStyle)
+      }
+
+      // 绘制标题（如果存在且启用标题功能）
+      if (this.annotationManager.enableTitle && item.title) {
+        this.drawAnnotationTitle(item)
       }
     })
 
@@ -370,6 +376,113 @@ export class Renderer {
   }
 
   /**
+   * 绘制标注标题
+   * @param annotation - 标注操作记录
+   */
+  private drawAnnotationTitle(annotation: Operate<Rect | Polygon>): void {
+    if (!annotation.title) return
+
+    const titleStyle = this.annotationManager.getEffectiveTitleStyle(annotation)
+    const titlePos = this.annotationManager.getEffectiveTitlePosition(annotation)
+
+    const font = titleStyle.font || '12px Arial'
+    const color = titleStyle.color || '#FFFFFF'
+    const bgColor = titleStyle.backgroundColor || 'rgba(0, 0, 0, 0.7)'
+    const paddingX = titleStyle.paddingX ?? 6
+    const paddingY = titleStyle.paddingY ?? 3
+    const borderRadius = titleStyle.borderRadius ?? 4
+
+    this.ctx.save()
+    this.ctx.font = font
+
+    const textMetrics = this.ctx.measureText(annotation.title)
+    const textWidth = textMetrics.width
+    // 从字体字符串中提取字号
+    const fontSizeMatch = font.match(/(\d+)px/)
+    const fontSize = fontSizeMatch ? parseInt(fontSizeMatch[1]) : 12
+    const textHeight = fontSize
+
+    // 计算标注参考位置（画布坐标）
+    let refX: number, refY: number, refW: number, refH: number
+
+    if (annotation.type === "rect") {
+      const rect = annotation.data[0] as Rect
+      refX = this.viewport.offset.x + rect.start.x * this.viewport.scale
+      refY = this.viewport.offset.y + rect.start.y * this.viewport.scale
+      refW = rect.width * this.viewport.scale
+      refH = rect.height * this.viewport.scale
+    } else {
+      const polygon = annotation.data as Polygon[]
+      if (polygon.length === 0) { this.ctx.restore(); return }
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      polygon.forEach(p => {
+        const px = this.viewport.offset.x + p.point.x * this.viewport.scale
+        const py = this.viewport.offset.y + p.point.y * this.viewport.scale
+        if (px < minX) minX = px
+        if (py < minY) minY = py
+        if (px > maxX) maxX = px
+        if (py > maxY) maxY = py
+      })
+      refX = minX
+      refY = minY
+      refW = maxX - minX
+      refH = maxY - minY
+    }
+
+    const bgW = textWidth + paddingX * 2
+    const bgH = textHeight + paddingY * 2
+
+    // 根据 vertical 计算 bgY
+    const vertical = titlePos.vertical || 'top'
+    const offsetX = titlePos.offsetX || 0
+    const offsetY = titlePos.offsetY || 0
+    let bgY: number
+    switch (vertical) {
+      case 'bottom':
+        bgY = refY + refH + 4 + offsetY
+        break
+      case 'inside-top':
+        bgY = refY + 4 + offsetY
+        break
+      case 'top':
+      default:
+        bgY = refY - bgH - 4 + offsetY
+        break
+    }
+
+    // 根据 align 计算 bgX
+    const align = titlePos.align || 'center'
+    let bgX: number
+    switch (align) {
+      case 'left':
+        bgX = refX + offsetX
+        break
+      case 'right':
+        bgX = refX + refW - bgW + offsetX
+        break
+      case 'center':
+      default:
+        bgX = refX + refW / 2 - bgW / 2 + offsetX
+        break
+    }
+
+    // 绘制背景
+    this.ctx.fillStyle = bgColor
+    this.ctx.setLineDash([])
+    this.ctx.beginPath()
+    this.ctx.roundRect(bgX, bgY, bgW, bgH, borderRadius)
+    this.ctx.fill()
+
+    // 绘制标题文本
+    this.ctx.fillStyle = color
+    this.ctx.textAlign = "left"
+    this.ctx.textBaseline = "top"
+    this.ctx.fillText(annotation.title, bgX + paddingX, bgY + paddingY)
+
+    this.ctx.restore()
+  }
+
+  /**
    * 绘制文本标注
    */
   private drawTextAnnotations(): void {
@@ -393,8 +506,8 @@ export class Renderer {
         backgroundColor: globalStyle.backgroundColor
       }
 
+      // position 是背景框左上角
       const canvasX = this.viewport.offset.x + textData.position.x * this.viewport.scale
-      // canvasY 是文本基线位置（fillText 的 y 参数）
       const canvasY = this.viewport.offset.y + textData.position.y * this.viewport.scale
 
       // 检查是否被选中
@@ -409,15 +522,12 @@ export class Renderer {
       const descent = textMetrics.actualBoundingBoxDescent || textData.height * 0.2
       const actualTextHeight = ascent + descent
       
-      // 计算背景框尺寸
+      // 计算背景框尺寸（position 即左上角）
       const r = globalStyle.borderRadius
-      const bgX = canvasX - globalStyle.padding
+      const bgX = canvasX
+      const bgY = canvasY
       const boxWidth = textData.width + globalStyle.padding * 2
       const boxHeight = actualTextHeight + globalStyle.padding * 2
-      
-      // 背景框的 Y 位置：
-      // canvasY 是基线位置，背景框顶部应该在基线位置上方 ascent + padding 处
-      const bgY = canvasY - ascent - globalStyle.padding
 
       // 绘制背景（带圆角）
       this.ctx.fillStyle = textStyle.backgroundColor
@@ -436,9 +546,11 @@ export class Renderer {
         this.ctx.setLineDash([])
       }
 
-      // 绘制文本（在基线位置）
+      // 绘制文本：基线位置在背景框内部，向下偏移 ascent + padding
+      const textBaselineX = canvasX + globalStyle.padding
+      const textBaselineY = canvasY + globalStyle.padding + ascent
       this.ctx.fillStyle = textStyle.color
-      this.ctx.fillText(textData.text, canvasX, canvasY)
+      this.ctx.fillText(textData.text, textBaselineX, textBaselineY)
     })
   }
 
@@ -506,12 +618,11 @@ export class Renderer {
       const descent = textMetrics.actualBoundingBoxDescent || textData.height * 0.2
       const actualTextHeight = ascent + descent
       
-      // 计算背景框尺寸和位置
-      const bgX = textData.position.x - globalStyle.padding
+      // position 是背景框左上角
+      const bgX = textData.position.x
+      const bgY = textData.position.y
       const bgWidth = textData.width + globalStyle.padding * 2
       const bgHeight = actualTextHeight + globalStyle.padding * 2
-      // 背景框顶部位置 = 基线位置 - 上行高度 - 内边距
-      const bgY = textData.position.y - ascent - globalStyle.padding
       const r = globalStyle.borderRadius
 
       // 绘制背景
@@ -523,9 +634,91 @@ export class Renderer {
         ctx.fillRect(bgX, bgY, bgWidth, bgHeight)
       }
 
-      // 绘制文本（在基线位置）
+      // 绘制文本：基线在背景框内部
       ctx.fillStyle = textStyle.color
-      ctx.fillText(textData.text, textData.position.x, textData.position.y)
+      ctx.fillText(textData.text, textData.position.x + globalStyle.padding, textData.position.y + globalStyle.padding + ascent)
     })
+
+    // 绘制标注标题（导出模式 - 仅在启用时）
+    if (this.annotationManager.enableTitle) {
+      this.annotationManager.recordList.forEach((item) => {
+      if (!item.title) return
+
+      const titleStyle = this.annotationManager.getEffectiveTitleStyle(item)
+      const titlePos = this.annotationManager.getEffectiveTitlePosition(item)
+
+      const font = titleStyle.font || '12px Arial'
+      const color = titleStyle.color || '#FFFFFF'
+      const bgColor = titleStyle.backgroundColor || 'rgba(0, 0, 0, 0.7)'
+      const paddingX = titleStyle.paddingX ?? 6
+      const paddingY = titleStyle.paddingY ?? 3
+      const borderRadius = titleStyle.borderRadius ?? 4
+
+      ctx.font = font
+
+      const textMetrics = ctx.measureText(item.title)
+      const textWidth = textMetrics.width
+      const fontSizeMatch = font.match(/(\d+)px/)
+      const textHeight = fontSizeMatch ? parseInt(fontSizeMatch[1]) : 12
+
+      // 计算标注参考位置（原始图像坐标）
+      let refX: number, refY: number, refW: number, refH: number
+      if (item.type === "rect") {
+        const rect = item.data[0] as Rect
+        refX = rect.start.x
+        refY = rect.start.y
+        refW = rect.width
+        refH = rect.height
+      } else {
+        const polygon = item.data as Polygon[]
+        if (polygon.length === 0) return
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+        polygon.forEach(p => {
+          if (p.point.x < minX) minX = p.point.x
+          if (p.point.y < minY) minY = p.point.y
+          if (p.point.x > maxX) maxX = p.point.x
+          if (p.point.y > maxY) maxY = p.point.y
+        })
+        refX = minX
+        refY = minY
+        refW = maxX - minX
+        refH = maxY - minY
+      }
+
+      const bgW = textWidth + paddingX * 2
+      const bgH = textHeight + paddingY * 2
+
+      const vertical = titlePos.vertical || 'top'
+      const offsetX = titlePos.offsetX || 0
+      const offsetY = titlePos.offsetY || 0
+      let bgY: number
+      switch (vertical) {
+        case 'bottom': bgY = refY + refH + 4 + offsetY; break
+        case 'inside-top': bgY = refY + 4 + offsetY; break
+        default: bgY = refY - bgH - 4 + offsetY; break
+      }
+
+      const align = titlePos.align || 'center'
+      let bgX: number
+      switch (align) {
+        case 'left': bgX = refX + offsetX; break
+        case 'right': bgX = refX + refW - bgW + offsetX; break
+        default: bgX = refX + refW / 2 - bgW / 2 + offsetX; break
+      }
+
+      ctx.fillStyle = bgColor
+      if ((ctx as unknown as { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect) {
+        (ctx as unknown as { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect(bgX, bgY, bgW, bgH, borderRadius)
+        ctx.fill()
+      } else {
+        ctx.fillRect(bgX, bgY, bgW, bgH)
+      }
+
+      ctx.fillStyle = color
+      ctx.textAlign = "left"
+      ctx.textBaseline = "top"
+      ctx.fillText(item.title, bgX + paddingX, bgY + paddingY)
+    })
+    }
   }
 }

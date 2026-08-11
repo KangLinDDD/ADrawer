@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-11
+
+### Added - 标注标题功能
+
+- **标题能力**：
+  - 矩形/多边形标注支持设置标题（画布上渲染文字 + 背景框）
+  - 双击标注快速编辑标题，Enter 完成 / ESC 取消
+  - `enableTitle` 选项显式开启（默认 false）
+- **标题样式与位置**：
+  - 字体、文字色、背景色、内边距、圆角均可配置
+  - 位置支持上方 / 下方 / 内部上方，水平左中右对齐 + 像素偏移
+  - 支持 rgba/hsla/8 位 hex 等任意 CSS 颜色（含透明度）
+- **标题输入框 placeholder 自定义**：
+  - 通过 `TitleStyle.placeholder` 配置，默认"输入标题..."
+  - 修改全局 placeholder 只影响之后设置标题的标注（快照隔离）
+  - 支持单个标注独立覆盖 placeholder
+- **样式快照隔离**：设置标题时将当前全局样式快照存入标注，后续全局修改不影响已有标题
+- **新增 API**：
+  - `setAnnotationTitle(index, title)` / `getAnnotationTitle(index)` - 设置/获取标注标题
+  - `setTitleStyle(style)` / `getTitleStyle()` - 全局标题样式
+  - `setTitlePosition(position)` / `getTitlePosition()` - 全局标题位置
+  - `setAnnotationTitleStyle(index, style)` - 单独设置某个标注的标题样式
+  - `setAnnotationTitlePosition(index, position)` - 单独设置某个标注的标题位置
+
 ### Added - 标注选中与移动功能
 
 - **选中功能**：
@@ -44,6 +68,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **智能删除**：清空文本后确认，自动删除标注
 - **自适应输入框**：输入时自动调整宽度适应内容
 - **自动选中文本**：进入编辑模式时自动选中文本，方便直接替换
+- **已有文本标注样式可更新**：新增 `updateTextAnnotationStyle(index, style)`，可将当前全局样式（如加粗）应用到指定文本标注，不影响全局默认和其他标注
+
+### Fixed
+
+- **键盘事件越界**：全局 `keydown` 处理器不再响应来自页面输入框（INPUT/TEXTAREA/SELECT/contentEditable）的按键，修复在输入框中按 Delete/Backspace 误删选中标注、按 Ctrl+Z 误撤销标注的问题
+
+### Examples
+
+- 示例页新增标题"占位提示"配置项（`examples/basic.html` / `basic-en.html`）
+- 示例页调整文本/标题样式时，同步应用到当前选中的标注
 
 ## [1.0.0] - 2024-03-05
 

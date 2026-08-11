@@ -33,6 +33,8 @@ export type {
   ViewportSize,
   ViewportOffset,
   DrawerEventHandlers,
+  TitleStyle,
+  TitlePosition,
 } from './modules/types'
 
 // 导出工具函数
@@ -65,7 +67,9 @@ import type {
   LineStyle,
   VertexStyle,
   TextStyle,
-  TextInputStyle
+  TextInputStyle,
+  TitleStyle,
+  TitlePosition
 } from './modules/types'
 import { getImageTypeFromUrl, base64ToFile, base64ToBlob, getZoomDelta } from './modules/utils'
 import { ViewportManager } from './modules/viewport'
@@ -111,7 +115,7 @@ export class Drawer {
   public drawType: DrawType = ""
 
   constructor(options: DrawerOptions) {
-    const { drawType, useEvents = true, id = "container", annotationColor, lineStyle, vertexStyle, textStyle } = options
+    const { drawType, useEvents = true, id = "container", annotationColor, lineStyle, vertexStyle, textStyle, enableTitle = false } = options
 
     // 获取容器
     const container = document.getElementById(id)
@@ -142,7 +146,7 @@ export class Drawer {
     container.appendChild(this.canvas)
 
     // 初始化功能模块
-    this.annotationManager = new AnnotationManager(this.viewport)
+    this.annotationManager = new AnnotationManager(this.viewport, this.container, () => this.render())
     
     // 设置颜色配置
     if (annotationColor) {
@@ -157,6 +161,12 @@ export class Drawer {
     // 设置顶点样式
     if (vertexStyle) {
       this.annotationManager.setVertexStyle(vertexStyle)
+    }
+    
+    // 设置标题功能启用状态（默认 false）
+    this.annotationManager.enableTitle = enableTitle
+    if (enableTitle) {
+      this.annotationManager.initTitleSupport()
     }
     
     this.textManager = new TextAnnotationManager(this.viewport, this.container, this.ctx, () => this.render())
@@ -426,6 +436,107 @@ export class Drawer {
    */
   public getAnnotations(): Operate<Rect | Polygon | TextAnnotation>[] {
     return this.annotationManager.getAnnotations()
+  }
+
+  /**
+   * 设置标注标题
+   * @param index - 标注在 recordList 中的索引
+   * @param title - 标题文本
+   * @returns 是否设置成功
+   * @example
+   * // 设置第一个标注的标题
+   * drawer.setAnnotationTitle(0, '这是一个人脸')
+   */
+  public setAnnotationTitle(index: number, title: string): boolean {
+    const result = this.annotationManager.setTitle(index, title)
+    if (result) this.render()
+    return result
+  }
+
+  /**
+   * 获取标注标题
+   * @param index - 标注在 recordList 中的索引
+   * @returns 标题文本，如果没有则返回 undefined
+   */
+  public getAnnotationTitle(index: number): string | undefined {
+    return this.annotationManager.getTitle(index)
+  }
+
+  /**
+   * 设置标题样式（全局默认）
+   * @param style - 标题样式配置
+   * @example
+   * drawer.setTitleStyle({
+   *   font: 'bold 14px Microsoft YaHei',
+   *   color: '#FFD700',
+   *   backgroundColor: 'rgba(0,0,0,0.8)',
+   *   paddingX: 8,
+   *   paddingY: 4,
+   *   borderRadius: 6,
+   *   placeholder: '请输入标题'  // 标题输入框占位提示，修改后只影响之后设置标题的标注
+   * })
+   */
+  public setTitleStyle(style: Partial<TitleStyle>): void {
+    this.annotationManager.setTitleStyle(style)
+    this.render()
+  }
+
+  /**
+   * 获取当前标题样式
+   */
+  public getTitleStyle(): TitleStyle {
+    return this.annotationManager.getTitleStyle()
+  }
+
+  /**
+   * 设置标题位置（全局默认）
+   * @param position - 标题位置配置
+   * @example
+   * drawer.setTitlePosition({
+   *   vertical: 'top',     // 'top' | 'bottom' | 'inside-top'
+   *   align: 'left',       // 'left' | 'center' | 'right'
+   *   offsetX: 0,
+   *   offsetY: 0
+   * })
+   */
+  public setTitlePosition(position: Partial<TitlePosition>): void {
+    this.annotationManager.setTitlePosition(position)
+    this.render()
+  }
+
+  /**
+   * 获取当前标题位置
+   */
+  public getTitlePosition(): TitlePosition {
+    return this.annotationManager.getTitlePosition()
+  }
+
+  /**
+   * 单独设置某个标注的标题样式（不影响全局默认，也不影响其他标注）
+   * @param index - 标注索引
+   * @param style - 标题样式（部分覆盖）
+   * @example
+   * drawer.setAnnotationTitleStyle(0, { color: '#FF0000', font: 'bold 16px Arial' })
+   * // 单独自定义某个标注的标题输入框占位提示
+   * drawer.setAnnotationTitleStyle(0, { placeholder: '请输入人脸名称' })
+   */
+  public setAnnotationTitleStyle(index: number, style: Partial<TitleStyle>): boolean {
+    const result = this.annotationManager.setAnnotationTitleStyle(index, style)
+    if (result) this.render()
+    return result
+  }
+
+  /**
+   * 单独设置某个标注的标题位置（不影响全局默认，也不影响其他标注）
+   * @param index - 标注索引
+   * @param position - 标题位置（部分覆盖）
+   * @example
+   * drawer.setAnnotationTitlePosition(0, { vertical: 'bottom', align: 'left' })
+   */
+  public setAnnotationTitlePosition(index: number, position: Partial<TitlePosition>): boolean {
+    const result = this.annotationManager.setAnnotationTitlePosition(index, position)
+    if (result) this.render()
+    return result
   }
 
   /**
@@ -739,6 +850,22 @@ export class Drawer {
   }
 
   /**
+   * 更新指定文本标注的样式（只影响该标注，不影响全局默认和其他标注）
+   * 可用于把当前全局样式（如加粗）应用到已存在的文本标注上
+   * @param index - 文本标注索引
+   * @param style - 样式（部分覆盖）
+   * @returns 是否更新成功
+   * @example
+   * // 让第一个文本标注变为粗体
+   * drawer.updateTextAnnotationStyle(0, { font: 'bold 16px Arial' })
+   */
+  public updateTextAnnotationStyle(index: number, style: Partial<Pick<TextStyle, 'font' | 'color' | 'backgroundColor'>>): boolean {
+    const result = this.textManager.updateTextAnnotationStyle(index, style)
+    if (result) this.render()
+    return result
+  }
+
+  /**
    * 设置文本输入框样式
    * @param style - 输入框样式配置
    * @example
@@ -773,6 +900,9 @@ export class Drawer {
   public destroy(): void {
     // 清理文本输入框
     this.textManager.destroy()
+    
+    // 清理标题输入框
+    this.annotationManager.destroyTitleInput()
     
     // 移除 Canvas
     if (this.canvas.parentNode) {

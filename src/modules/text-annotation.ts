@@ -175,7 +175,25 @@ export class TextAnnotationManager {
   }
 
   /**
+   * 更新指定文本标注的样式（部分覆盖，不影响全局默认和其他标注）
+   * @param index - 文本标注索引
+   * @param style - 样式（部分覆盖）
+   */
+  updateTextAnnotationStyle(index: number, style: Partial<Pick<TextStyle, 'font' | 'color' | 'backgroundColor'>>): boolean {
+    if (index < 0 || index >= this.textAnnotations.length) return false
+    const annotation = this.textAnnotations[index]
+    annotation.style = {
+      ...(annotation.style || this.getCurrentStyle()),
+      ...style
+    }
+    return true
+  }
+
+  /**
    * 添加文本标注
+   * @param x - 图像坐标 X（标注背景框左上角）
+   * @param y - 图像坐标 Y（标注背景框左上角）
+   * @param text - 初始文本（可选，默认为空字符串）
    */
   addTextAnnotation(x: number, y: number, text: string = ""): number {
     // 测量文本尺寸
@@ -293,14 +311,14 @@ export class TextAnnotationManager {
     this.currentEditingIndex = index
     this.textBeforeEditing = textData.text
 
-    // 计算画布位置
+    // 计算画布位置（position 表示背景框左上角）
     const canvasX = this.viewport.offset.x + textData.position.x * this.viewport.scale
     const canvasY = this.viewport.offset.y + textData.position.y * this.viewport.scale
 
-    // 定位输入框
+    // 定位输入框在背景框左上角位置
     this.textInput.value = textData.text
-    this.textInput.style.left = `${canvasX - this.textStyle.padding}px`
-    this.textInput.style.top = `${canvasY - this.textStyle.padding}px`
+    this.textInput.style.left = `${canvasX}px`
+    this.textInput.style.top = `${canvasY}px`
     this.textInput.style.display = "block"
 
     // 调整输入框宽度
@@ -467,14 +485,17 @@ export class TextAnnotationManager {
     // 从后往前遍历，优先选中上层的文本
     for (let i = this.textAnnotations.length - 1; i >= 0; i--) {
       const textData = this.textAnnotations[i]
+      // position 是背景框左上角（已包含 padding 偏移）
       const canvasX = this.viewport.offset.x + textData.position.x * this.viewport.scale
       const canvasY = this.viewport.offset.y + textData.position.y * this.viewport.scale
+      const boxW = Math.max(textData.width, 60) + this.textStyle.padding * 2
+      const boxH = textData.height + this.textStyle.padding * 2
 
       if (
-        offsetX >= canvasX - this.textStyle.padding &&
-        offsetX <= canvasX + textData.width + this.textStyle.padding &&
-        offsetY >= canvasY - this.textStyle.padding &&
-        offsetY <= canvasY + textData.height + this.textStyle.padding
+        offsetX >= canvasX &&
+        offsetX <= canvasX + boxW &&
+        offsetY >= canvasY &&
+        offsetY <= canvasY + boxH
       ) {
         return i
       }

@@ -631,6 +631,37 @@ describe('Text Annotations', () => {
       drawer.clearTextAnnotations();
       expect(drawer.getTextAnnotations()).toEqual([]);
     });
+
+    it('should update existing text annotation style (e.g. bold)', () => {
+      drawer.addTextAnnotation(100, 100, 'Test');
+      const result = drawer.updateTextAnnotationStyle(0, { font: 'bold 16px Arial' });
+      expect(result).toBe(true);
+      expect(drawer.getTextAnnotations()[0].style?.font).toBe('bold 16px Arial');
+    });
+
+    it('should partially update style and preserve other fields', () => {
+      drawer.setTextStyle({ font: '16px Arial', color: '#FFD700', backgroundColor: 'rgba(0,0,0,0.6)' });
+      drawer.addTextAnnotation(100, 100, 'Test');
+      drawer.updateTextAnnotationStyle(0, { font: 'bold 20px Arial' });
+      const style = drawer.getTextAnnotations()[0].style;
+      expect(style?.font).toBe('bold 20px Arial');
+      expect(style?.color).toBe('#FFD700');
+      expect(style?.backgroundColor).toBe('rgba(0,0,0,0.6)');
+    });
+
+    it('should return false for out-of-range index', () => {
+      drawer.addTextAnnotation(100, 100, 'Test');
+      expect(drawer.updateTextAnnotationStyle(999, { font: 'bold 16px Arial' })).toBe(false);
+      expect(drawer.updateTextAnnotationStyle(-1, { font: 'bold 16px Arial' })).toBe(false);
+    });
+
+    it('should not affect other annotations or global default', () => {
+      drawer.addTextAnnotation(100, 100, 'First');
+      drawer.addTextAnnotation(200, 200, 'Second');
+      drawer.updateTextAnnotationStyle(0, { font: 'bold 16px Arial' });
+      expect(drawer.getTextAnnotations()[1].style?.font).toBe('16px Arial');
+      expect(drawer['textManager'].textStyle.font).toBe('16px Arial');
+    });
   });
 
   describe('Text Annotation Selection', () => {
@@ -1475,9 +1506,65 @@ describe('Edge Cases', () => {
         data: [{ start: { x: 200, y: 200 }, width: -100, height: -100 }],
         status: 'fullfilled'
       });
-      
+
       drawer.selectAnnotation(0);
       expect(drawer.getSelectedAnnotation()).not.toBeNull();
     });
+  });
+});
+
+describe('Keyboard Events from Page Inputs', () => {
+  let container: HTMLDivElement;
+  let drawer: Drawer;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    container.id = 'kbd-container';
+    container.style.width = '800px';
+    container.style.height = '600px';
+    document.body.appendChild(container);
+    drawer = new Drawer({ id: 'kbd-container' });
+    drawer['annotationManager'].recordList.push({
+      type: 'rect',
+      data: [{ start: { x: 100, y: 100 }, width: 100, height: 100 }],
+      status: 'fullfilled'
+    });
+    drawer.selectAnnotation(0);
+  });
+
+  afterEach(() => {
+    if (drawer) drawer.destroy();
+    if (container && container.parentNode) {
+      container.parentNode.removeChild(container);
+    }
+  });
+
+  it('should NOT delete selected annotation when Backspace is pressed inside a page input', () => {
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+    expect(drawer.getAnnotations().length).toBe(1);
+    document.body.removeChild(input);
+  });
+
+  it('should NOT delete selected annotation when Delete is pressed inside a textarea', () => {
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    expect(drawer.getAnnotations().length).toBe(1);
+    document.body.removeChild(textarea);
+  });
+
+  it('should still delete selected annotation when Delete is pressed outside inputs', () => {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    expect(drawer.getAnnotations().length).toBe(0);
+  });
+
+  it('should NOT hijack Ctrl+Z inside a page input', () => {
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+    expect(drawer.getAnnotations().length).toBe(1);
+    document.body.removeChild(input);
   });
 });

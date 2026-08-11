@@ -849,6 +849,16 @@ export class EventHandler {
       return
     }
 
+    // 如果双击了选中的标注（矩形/多边形），触发标题编辑
+    if (this.annotationManager.selectedAnnotation) {
+      const imgCoords = this.viewport.toImageCoordinates(e.offsetX, e.offsetY)
+      const clicked = this.annotationManager.getAnnotationAtPoint(imgCoords)
+      if (clicked && clicked.index === this.annotationManager.selectedAnnotation.index) {
+        this.annotationManager.startTitleEditing(clicked.index)
+        return
+      }
+    }
+
     // 多边形模式下双击结束绘制
     const drawType = this.getDrawType()
     if (drawType === "polygon") {
@@ -900,6 +910,19 @@ export class EventHandler {
    * 处理键盘按下
    */
   handleKeyDown(e: KeyboardEvent): void {
+    // 忽略来自页面输入框/可编辑元素的按键，
+    // 避免用户在输入框中按 Delete/Backspace/Ctrl+Z 时误操作标注
+    const target = e.target as HTMLElement | null
+    if (
+      target &&
+      (target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable)
+    ) {
+      return
+    }
+
     // 撤销操作
     if (e.key === "z" && (e.ctrlKey || e.metaKey)) {
       this.annotationManager.withdraw() || this.textManager.withdraw()

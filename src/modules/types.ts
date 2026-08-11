@@ -46,12 +46,46 @@ export type VertexStyle = {
   shape: 'circle' | 'square' | 'diamond'
 }
 
+/** 标题样式 */
+export type TitleStyle = {
+  /** 字体样式，如 "bold 12px Arial" */
+  font?: string
+  /** 文字颜色 */
+  color?: string
+  /** 背景颜色 */
+  backgroundColor?: string
+  /** 水平内边距 */
+  paddingX?: number
+  /** 垂直内边距 */
+  paddingY?: number
+  /** 圆角半径 */
+  borderRadius?: number
+  /** 标题输入框的占位提示文本（随标题样式快照存入标注） */
+  placeholder?: string
+}
+
+/** 标题位置 */
+export type TitlePosition = {
+  /** 垂直位置：top=标注上方, bottom=标注下方, inside-top=标注内部上方 */
+  vertical?: 'top' | 'bottom' | 'inside-top'
+  /** 水平对齐：left/center/right */
+  align?: 'left' | 'center' | 'right'
+  /** 水平偏移（像素，图像坐标） */
+  offsetX?: number
+  /** 垂直偏移（像素，图像坐标） */
+  offsetY?: number
+}
+
 /** 标注样式 */
 export type AnnotationStyle = {
   strokeColor: string
   lineWidth: number
   lineStyle?: LineStyle
   vertexStyle?: VertexStyle
+  /** 标注标题样式（覆盖全局默认） */
+  titleStyle?: TitleStyle
+  /** 标注标题位置（覆盖全局默认） */
+  titlePosition?: TitlePosition
 }
 
 /** 操作记录 */
@@ -60,6 +94,8 @@ export type Operate<T extends Shape> = {
   data: T[]
   status: "fullfilled" | "pending"
   style?: AnnotationStyle
+  /** 标注标题 */
+  title?: string
 }
 
 /** 绘制类型 */
@@ -78,6 +114,8 @@ export type DrawerOptions = {
   vertexStyle?: Partial<VertexStyle>
   /** 文本样式 */
   textStyle?: Partial<TextStyle>
+  /** 是否启用标注标题功能（默认 false，需显式开启） */
+  enableTitle?: boolean
 }
 
 /** 选中标注信息 */

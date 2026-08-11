@@ -14,7 +14,9 @@ import type {
   ColorConfig,
   AnnotationStyle,
   LineStyle,
-  VertexStyle
+  VertexStyle,
+  TitleStyle,
+  TitlePosition
 } from './types'
 import { isPointInRect, isPointInPolygon } from './utils'
 import type { ViewportManager } from './viewport'
@@ -49,6 +51,10 @@ export class AnnotationManager {
   // 删除历史记录（用于撤销删除）
   private deleteHistory: { annotation: Operate<Rect | Polygon>; index: number }[] = []
 
+  // 标题编辑相关
+  public editingTitleIndex: number | null = null
+  public titleInput: HTMLInputElement | null = null
+
   // 样式配置
   public strokeStyle = "red"
   public lineWidth = 5
@@ -74,8 +80,43 @@ export class AnnotationManager {
     default: "red"
   }
 
-  constructor(private viewport: ViewportManager) {
+  // 标题样式全局默认配置
+  public titleStyle: TitleStyle = {
+    font: '12px Arial',
+    color: '#FFFFFF',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingX: 6,
+    paddingY: 3,
+    borderRadius: 4,
+    placeholder: '输入标题...'
+  }
+
+  // 标题位置全局默认配置
+  public titlePosition: TitlePosition = {
+    vertical: 'top',
+    align: 'center',
+    offsetX: 0,
+    offsetY: 0
+  }
+
+  // 是否启用标题功能（默认 false，需在 DrawerOptions 中显式开启）
+  public enableTitle = false
+
+  constructor(
+    private viewport: ViewportManager,
+    private container?: HTMLElement,
+    private renderCallback?: () => void
+  ) {
     this.applyColorConfig()
+  }
+
+  /**
+   * 初始化标题功能（由 Drawer 在设置 enableTitle 后调用）
+   */
+  initTitleSupport(): void {
+    if (this.container && this.enableTitle) {
+      this.createTitleInput()
+    }
   }
 
   /**
@@ -655,6 +696,284 @@ export class AnnotationManager {
       index: this.selectedAnnotation.index,
       type: this.selectedAnnotation.type,
       data: annotation as Operate<Rect | Polygon>,
+    }
+  }
+
+  // ==================== 标题相关方法 ====================
+
+  /**
+   * 设置标题样式（全局默认）
+   * @param style - 标题样式配置
+   */
+  setTitleStyle(style: Partial<TitleStyle>): void {
+    this.titleStyle = { ...this.titleStyle, ...style }
+  }
+
+  /**
+   * 获取当前标题样式
+   */
+  getTitleStyle(): TitleStyle {
+    return { ...this.titleStyle }
+  }
+
+  /**
+   * 设置标题位置（全局默认）
+   * @param position - 标题位置配置
+   */
+  setTitlePosition(position: Partial<TitlePosition>): void {
+    this.titlePosition = { ...this.titlePosition, ...position }
+  }
+
+  /**
+   * 获取当前标题位置
+   */
+  getTitlePosition(): TitlePosition {
+    return { ...this.titlePosition }
+  }
+
+  /**
+   * 获取标注实际使用的标题样式（标注自定义样式优先于全局默认）
+   */
+  getEffectiveTitleStyle(annotation: Operate<Rect | Polygon>): TitleStyle {
+    const annotationStyle = this.getAnnotationStyle(annotation)
+    return {
+      ...this.titleStyle,
+      ...(annotationStyle.titleStyle || {})
+    }
+  }
+
+  /**
+   * 获取标注实际使用的标题位置（标注自定义位置优先于全局默认）
+   */
+  getEffectiveTitlePosition(annotation: Operate<Rect | Polygon>): TitlePosition {
+    const annotationStyle = this.getAnnotationStyle(annotation)
+    return {
+      ...this.titlePosition,
+      ...(annotationStyle.titlePosition || {})
+    }
+  }
+
+  /**
+   * 将当前全局标题样式/位置快照存入标注（设置标题时自动调用）
+   */
+  private captureTitleStyleSnapshot(annotation: Operate<Rect | Polygon>): void {
+    if (!annotation.style) {
+      annotation.style = this.getCurrentStyle()
+    }
+    annotation.style.titleStyle = { ...this.titleStyle }
+    annotation.style.titlePosition = { ...this.titlePosition }
+  }
+
+  /**
+   * 单独修改某个标注的标题样式（不影响全局默认）
+   * @param index - 标注索引
+   * @param style - 标题样式（部分覆盖）
+   */
+  setAnnotationTitleStyle(index: number, style: Partial<TitleStyle>): boolean {
+    if (index < 0 || index >= this.recordList.length) return false
+    const annotation = this.recordList[index]
+    if (!annotation.style) {
+      annotation.style = this.getCurrentStyle()
+    }
+    annotation.style.titleStyle = {
+      ...(annotation.style.titleStyle || this.titleStyle),
+      ...style
+    }
+    return true
+  }
+
+  /**
+   * 单独修改某个标注的标题位置（不影响全局默认）
+   * @param index - 标注索引
+   * @param position - 标题位置（部分覆盖）
+   */
+  setAnnotationTitlePosition(index: number, position: Partial<TitlePosition>): boolean {
+    if (index < 0 || index >= this.recordList.length) return false
+    const annotation = this.recordList[index]
+    if (!annotation.style) {
+      annotation.style = this.getCurrentStyle()
+    }
+    annotation.style.titlePosition = {
+      ...(annotation.style.titlePosition || this.titlePosition),
+      ...position
+    }
+    return true
+  }
+
+  /**
+   * 创建标题输入框
+   */
+  private createTitleInput(): void {
+    if (!this.container) return
+
+    this.titleInput = document.createElement("input")
+    this.titleInput.type = "text"
+    this.titleInput.style.position = "absolute"
+    this.titleInput.style.zIndex = "99998"
+    this.titleInput.style.display = "none"
+    this.titleInput.style.outline = "none"
+    this.titleInput.style.border = "1px solid #00D9FF"
+    this.titleInput.style.borderRadius = "4px"
+    this.titleInput.style.padding = "4px 8px"
+    this.titleInput.style.fontSize = "13px"
+    this.titleInput.style.fontFamily = "Arial, sans-serif"
+    this.titleInput.style.backgroundColor = "#ffffff"
+    this.titleInput.style.color = "#333"
+    this.titleInput.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)"
+    this.titleInput.style.minWidth = "80px"
+    this.titleInput.style.maxWidth = "200px"
+    this.titleInput.placeholder = this.titleStyle.placeholder || "输入标题..."
+
+    // 失去焦点时完成编辑
+    this.titleInput.addEventListener("blur", () => {
+      this.finishTitleEditing()
+    })
+
+    // 键盘事件
+    this.titleInput.addEventListener("keydown", (e) => {
+      e.stopPropagation()
+      if (e.key === "Enter") {
+        this.finishTitleEditing()
+      } else if (e.key === "Escape") {
+        e.preventDefault()
+        this.cancelTitleEditing()
+      }
+    })
+
+    this.container.appendChild(this.titleInput)
+  }
+
+  /**
+   * 设置标注标题（API调用）
+   * @param index - 标注索引
+   * @param title - 标题文本
+   */
+  setTitle(index: number, title: string): boolean {
+    if (index < 0 || index >= this.recordList.length) return false
+    const annotation = this.recordList[index]
+    annotation.title = title || undefined
+
+    // 设置非空标题时，将当前全局样式快照存入标注，保证后续全局修改不影响已有标题
+    if (title) {
+      this.captureTitleStyleSnapshot(annotation)
+    }
+    return true
+  }
+
+  /**
+   * 获取标注标题
+   * @param index - 标注索引
+   */
+  getTitle(index: number): string | undefined {
+    if (index < 0 || index >= this.recordList.length) return undefined
+    return this.recordList[index].title
+  }
+
+  /**
+   * 开始编辑标题（双击或API触发）
+   * @param index - 标注索引
+   */
+  startTitleEditing(index: number): boolean {
+    if (!this.enableTitle || !this.titleInput || index < 0 || index >= this.recordList.length) {
+      return false
+    }
+
+    const annotation = this.recordList[index]
+    this.editingTitleIndex = index
+    this.deselectAnnotation()
+
+    // 计算标注的位置（画布坐标）
+    let canvasX: number, canvasY: number
+    if (annotation.type === "rect") {
+      const rect = annotation.data[0] as Rect
+      canvasX = this.viewport.offset.x + rect.start.x * this.viewport.scale
+      canvasY = this.viewport.offset.y + rect.start.y * this.viewport.scale
+    } else {
+      // 多边形：使用第一个顶点的位置
+      const firstPoint = (annotation.data as Polygon[])[0]
+      canvasX = this.viewport.offset.x + firstPoint.point.x * this.viewport.scale
+      canvasY = this.viewport.offset.y + firstPoint.point.y * this.viewport.scale
+    }
+
+    // 定位输入框在标注上方
+    this.titleInput.value = annotation.title || ""
+    // 应用该标注的生效 placeholder（标注快照优先于全局默认）
+    this.titleInput.placeholder =
+      this.getEffectiveTitleStyle(annotation).placeholder || "输入标题..."
+    this.titleInput.style.left = `${canvasX}px`
+    this.titleInput.style.top = `${canvasY - 32}px`
+    this.titleInput.style.display = "block"
+
+    // 延迟聚焦
+    setTimeout(() => {
+      if (this.titleInput) {
+        this.titleInput.focus()
+        this.titleInput.select()
+      }
+    }, 10)
+
+    return true
+  }
+
+  /**
+   * 完成标题编辑
+   */
+  finishTitleEditing(): boolean {
+    if (!this.titleInput || this.editingTitleIndex === null) return false
+
+    const index = this.editingTitleIndex
+    const newTitle = this.titleInput.value.trim()
+
+    if (index >= 0 && index < this.recordList.length) {
+      const annotation = this.recordList[index]
+      annotation.title = newTitle || undefined
+      // 设置非空标题时，将当前全局样式快照存入标注
+      if (newTitle) {
+        this.captureTitleStyleSnapshot(annotation)
+      }
+      // 重新选中标注
+      this.selectAnnotation(index)
+    }
+
+    this.resetTitleEditingState()
+    if (this.renderCallback) this.renderCallback()
+    return true
+  }
+
+  /**
+   * 取消标题编辑
+   */
+  cancelTitleEditing(): boolean {
+    if (!this.titleInput || this.editingTitleIndex === null) return false
+
+    const index = this.editingTitleIndex
+    // 恢复选中
+    if (index >= 0 && index < this.recordList.length) {
+      this.selectAnnotation(index)
+    }
+
+    this.resetTitleEditingState()
+    if (this.renderCallback) this.renderCallback()
+    return true
+  }
+
+  /**
+   * 重置标题编辑状态
+   */
+  private resetTitleEditingState(): void {
+    if (this.titleInput) {
+      this.titleInput.style.display = "none"
+    }
+    this.editingTitleIndex = null
+  }
+
+  /**
+   * 清理标题输入框
+   */
+  destroyTitleInput(): void {
+    if (this.titleInput && this.titleInput.parentNode) {
+      this.titleInput.parentNode.removeChild(this.titleInput)
+      this.titleInput = null
     }
   }
 }
