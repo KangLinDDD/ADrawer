@@ -35,6 +35,11 @@ export type {
   DrawerEventHandlers,
   TitleStyle,
   TitlePosition,
+  DrawerEventMap,
+  DrawerEventName,
+  DrawerListener,
+  ShapeChangePayload,
+  ChangeNotify,
 } from './modules/types'
 
 // 导出工具函数
@@ -53,6 +58,7 @@ export { AnnotationManager } from './modules/annotations'
 export { TextAnnotationManager } from './modules/text-annotation'
 export { Renderer } from './modules/renderer'
 export { EventHandler } from './modules/events'
+export { Emitter } from './modules/emitter'
 
 // 导入内部模块
 import type { 
@@ -77,6 +83,8 @@ import { AnnotationManager } from './modules/annotations'
 import { TextAnnotationManager } from './modules/text-annotation'
 import { Renderer } from './modules/renderer'
 import { EventHandler } from './modules/events'
+import { Emitter } from './modules/emitter'
+import type { DrawerEventName, DrawerListener } from './modules/types'
 
 /**
  * Drawer 类 - 图片标注库的主入口
@@ -105,6 +113,9 @@ export class Drawer {
 
   // 事件处理器
   private events: DrawerEventHandlers
+
+  // 标注变更事件发射器
+  private emitter = new Emitter()
 
   // 图片相关
   private bgImage: HTMLImageElement | null = null
@@ -146,7 +157,12 @@ export class Drawer {
     container.appendChild(this.canvas)
 
     // 初始化功能模块
-    this.annotationManager = new AnnotationManager(this.viewport, this.container, () => this.render())
+    this.annotationManager = new AnnotationManager(
+      this.viewport,
+      this.container,
+      () => this.render(),
+      (event, payload) => this.emitter.emit(event, payload)
+    )
     
     // 设置颜色配置
     if (annotationColor) {
@@ -169,7 +185,13 @@ export class Drawer {
       this.annotationManager.initTitleSupport()
     }
     
-    this.textManager = new TextAnnotationManager(this.viewport, this.container, this.ctx, () => this.render())
+    this.textManager = new TextAnnotationManager(
+      this.viewport,
+      this.container,
+      this.ctx,
+      () => this.render(),
+      (event, payload) => this.emitter.emit(event, payload)
+    )
     
     // 设置文本样式
     if (textStyle) {
@@ -185,7 +207,8 @@ export class Drawer {
       () => this.drawType,
       () => this.bgImage,
       () => this.render(),
-      (type) => this.setDrawType(type)
+      (type) => this.setDrawType(type),
+      () => this.emitter.emit('undo', void 0)
     )
 
     // 初始化事件处理器
@@ -286,6 +309,7 @@ export class Drawer {
     this.textManager.clearTextAnnotations()
     this.setDrawType(type)
     this.render()
+    this.emitter.emit('clear', void 0)
   }
 
   /**
@@ -294,9 +318,10 @@ export class Drawer {
   public withdraw(): void {
     const annotationWithdrawn = this.annotationManager.withdraw()
     const textWithdrawn = this.textManager.withdraw()
-    
+
     if (annotationWithdrawn || textWithdrawn) {
       this.render()
+      this.emitter.emit('undo', void 0)
     }
   }
 
@@ -399,6 +424,7 @@ export class Drawer {
     this.textManager.clearTextAnnotations()
     // 取消文本标注选中
     this.textManager.deselectTextAnnotation()
+    this.emitter.emit('clear', void 0)
 
     // 只有在不清除图片且需要重置视图时才重置
     if (!keepImage && clearImage) {
@@ -439,15 +465,49 @@ export class Drawer {
   }
 
   /**
+   * 按索引或 id 获取单个矩形/多边形标注（深拷贝快照）
+   * @param ref - 标注索引或标注 id
+   * @returns 标注快照，不存在则返回 undefined
+   */
+  public getAnnotation(ref: number | string): Operate<Rect | Polygon> | undefined {
+    return this.annotationManager.getAnnotation(ref)
+  }
+
+  /**
+   * 按索引或 id 获取单个文本标注（深拷贝快照）
+   * @param ref - 文本标注索引或标注 id
+   * @returns 文本标注快照，不存在则返回 undefined
+   */
+  public getTextAnnotation(ref: number | string): TextAnnotation | undefined {
+    return this.textManager.getTextAnnotation(ref)
+  }
+
+  /**
+   * 订阅标注变更事件
+   * @example
+   * drawer.on('create', ({ id, type, index, data }) => console.log('新标注', id, data))
+   */
+  public on<K extends DrawerEventName>(event: K, listener: DrawerListener<K>): void {
+    this.emitter.on(event, listener)
+  }
+
+  /**
+   * 取消订阅
+   */
+  public off<K extends DrawerEventName>(event: K, listener: DrawerListener<K>): void {
+    this.emitter.off(event, listener)
+  }
+
+  /**
    * 设置标注标题
-   * @param index - 标注在 recordList 中的索引
+   * @param index - 标注索引或标注 id
    * @param title - 标题文本
    * @returns 是否设置成功
    * @example
    * // 设置第一个标注的标题
    * drawer.setAnnotationTitle(0, '这是一个人脸')
    */
-  public setAnnotationTitle(index: number, title: string): boolean {
+  public setAnnotationTitle(index: number | string, title: string): boolean {
     const result = this.annotationManager.setTitle(index, title)
     if (result) this.render()
     return result
@@ -455,10 +515,10 @@ export class Drawer {
 
   /**
    * 获取标注标题
-   * @param index - 标注在 recordList 中的索引
+   * @param index - 标注索引或标注 id
    * @returns 标题文本，如果没有则返回 undefined
    */
-  public getAnnotationTitle(index: number): string | undefined {
+  public getAnnotationTitle(index: number | string): string | undefined {
     return this.annotationManager.getTitle(index)
   }
 
@@ -513,14 +573,14 @@ export class Drawer {
 
   /**
    * 单独设置某个标注的标题样式（不影响全局默认，也不影响其他标注）
-   * @param index - 标注索引
+   * @param index - 标注索引或标注 id
    * @param style - 标题样式（部分覆盖）
    * @example
    * drawer.setAnnotationTitleStyle(0, { color: '#FF0000', font: 'bold 16px Arial' })
    * // 单独自定义某个标注的标题输入框占位提示
    * drawer.setAnnotationTitleStyle(0, { placeholder: '请输入人脸名称' })
    */
-  public setAnnotationTitleStyle(index: number, style: Partial<TitleStyle>): boolean {
+  public setAnnotationTitleStyle(index: number | string, style: Partial<TitleStyle>): boolean {
     const result = this.annotationManager.setAnnotationTitleStyle(index, style)
     if (result) this.render()
     return result
@@ -528,12 +588,12 @@ export class Drawer {
 
   /**
    * 单独设置某个标注的标题位置（不影响全局默认，也不影响其他标注）
-   * @param index - 标注索引
+   * @param index - 标注索引或标注 id
    * @param position - 标题位置（部分覆盖）
    * @example
    * drawer.setAnnotationTitlePosition(0, { vertical: 'bottom', align: 'left' })
    */
-  public setAnnotationTitlePosition(index: number, position: Partial<TitlePosition>): boolean {
+  public setAnnotationTitlePosition(index: number | string, position: Partial<TitlePosition>): boolean {
     const result = this.annotationManager.setAnnotationTitlePosition(index, position)
     if (result) this.render()
     return result
@@ -635,10 +695,10 @@ export class Drawer {
 
   /**
    * 更新文本标注内容
-   * @param index - 文本标注索引
+   * @param index - 标注索引或标注 id
    * @param text - 新文本内容
    */
-  public updateTextAnnotation(index: number, text: string): void {
+  public updateTextAnnotation(index: number | string, text: string): void {
     if (this.textManager.updateTextAnnotation(index, text)) {
       this.render()
     }
@@ -646,11 +706,11 @@ export class Drawer {
 
   /**
    * 移动文本标注位置
-   * @param index - 文本标注索引
+   * @param index - 标注索引或标注 id
    * @param x - 新位置 X（图像坐标）
    * @param y - 新位置 Y（图像坐标）
    */
-  public moveTextAnnotation(index: number, x: number, y: number): void {
+  public moveTextAnnotation(index: number | string, x: number, y: number): void {
     if (this.textManager.moveTextAnnotation(index, x, y)) {
       this.render()
     }
@@ -658,9 +718,9 @@ export class Drawer {
 
   /**
    * 删除文本标注
-   * @param index - 文本标注索引
+   * @param index - 标注索引或标注 id
    */
-  public removeTextAnnotation(index: number): void {
+  public removeTextAnnotation(index: number | string): void {
     if (this.textManager.removeTextAnnotation(index)) {
       this.render()
     }
@@ -678,9 +738,9 @@ export class Drawer {
 
   /**
    * 选中指定索引的标注
-   * @param index - 标注索引
+   * @param index - 标注索引或标注 id
    */
-  public selectAnnotation(index: number): void {
+  public selectAnnotation(index: number | string): void {
     if (this.annotationManager.selectAnnotation(index)) {
       this.render()
     }
@@ -739,6 +799,10 @@ export class Drawer {
    */
   public moveSelectedAnnotation(dx: number, dy: number): void {
     if (this.annotationManager.moveSelectedAnnotation(dx, dy)) {
+      const selected = this.annotationManager.selectedAnnotation
+      if (selected) {
+        this.annotationManager.notifyUpdate(selected.index)
+      }
       this.render()
     }
   }
@@ -774,10 +838,19 @@ export class Drawer {
   }
 
   /**
-   * 更新选中标注的样式为当前设置的样式
-   * 调用此方法后，选中的标注会保存当前的新样式
+   * 更新标注的样式为当前设置的样式
+   * 不传参时操作当前选中的标注（原有行为）；传参时按索引或 id 直接指定标注
+   * 调用此方法后，目标标注会保存当前的新样式
+   * @param ref - 可选，标注索引或标注 id
    */
-  public updateSelectedAnnotationStyle(): boolean {
+  public updateSelectedAnnotationStyle(ref?: number | string): boolean {
+    // 指定了目标标注：按索引或 id 直接更新
+    if (ref !== void 0) {
+      const result = this.annotationManager.updateAnnotationStyle(ref)
+      if (result) this.render()
+      return result
+    }
+
     const selected = this.annotationManager.selectedAnnotation
     if (!selected) return false
 
@@ -786,6 +859,7 @@ export class Drawer {
 
     // 更新标注的样式为当前样式
     annotation.style = this.annotationManager.getCurrentStyle()
+    this.annotationManager.notifyUpdate(selected.index)
     this.render()
     return true
   }
@@ -852,14 +926,14 @@ export class Drawer {
   /**
    * 更新指定文本标注的样式（只影响该标注，不影响全局默认和其他标注）
    * 可用于把当前全局样式（如加粗）应用到已存在的文本标注上
-   * @param index - 文本标注索引
+   * @param index - 标注索引或标注 id
    * @param style - 样式（部分覆盖）
    * @returns 是否更新成功
    * @example
    * // 让第一个文本标注变为粗体
    * drawer.updateTextAnnotationStyle(0, { font: 'bold 16px Arial' })
    */
-  public updateTextAnnotationStyle(index: number, style: Partial<Pick<TextStyle, 'font' | 'color' | 'backgroundColor'>>): boolean {
+  public updateTextAnnotationStyle(index: number | string, style: Partial<Pick<TextStyle, 'font' | 'color' | 'backgroundColor'>>): boolean {
     const result = this.textManager.updateTextAnnotationStyle(index, style)
     if (result) this.render()
     return result
@@ -898,6 +972,9 @@ export class Drawer {
    * 销毁 Drawer 实例，清理资源
    */
   public destroy(): void {
+    // 清空事件监听器
+    this.emitter.clear()
+
     // 清理文本输入框
     this.textManager.destroy()
     

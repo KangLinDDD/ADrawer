@@ -3,12 +3,12 @@
  * 负责矩形、多边形标注的存储、绘制、选中、移动、调整大小等功能
  */
 
-import type { 
-  Rect, 
-  Polygon, 
-  Point, 
+import type {
+  Rect,
+  Polygon,
+  Point,
   Operate,
-  SelectedAnnotation, 
+  SelectedAnnotation,
   ActiveHandle,
   SelectionStyle,
   ColorConfig,
@@ -16,9 +16,10 @@ import type {
   LineStyle,
   VertexStyle,
   TitleStyle,
-  TitlePosition
+  TitlePosition,
+  ChangeNotify
 } from './types'
-import { isPointInRect, isPointInPolygon } from './utils'
+import { isPointInRect, isPointInPolygon, deepClone, generateId } from './utils'
 import type { ViewportManager } from './viewport'
 
 export class AnnotationManager {
@@ -105,7 +106,8 @@ export class AnnotationManager {
   constructor(
     private viewport: ViewportManager,
     private container?: HTMLElement,
-    private renderCallback?: () => void
+    private renderCallback?: () => void,
+    private changeCallback?: ChangeNotify
   ) {
     this.applyColorConfig()
   }
@@ -169,6 +171,55 @@ export class AnnotationManager {
       lineStyle: this.lineStyle,
       vertexStyle: { ...this.vertexStyle }
     }
+  }
+
+  /**
+   * 上报标注变更（载荷携带深拷贝快照）
+   */
+  private notifyChange(event: 'create' | 'delete' | 'update', index: number, annotation: Operate<Rect | Polygon>): void {
+    if (!this.changeCallback || !annotation.id) return
+    this.changeCallback(event, {
+      id: annotation.id,
+      type: annotation.type as 'rect' | 'polygon',
+      index,
+      data: deepClone(annotation),
+    })
+  }
+
+  /**
+   * 供 Drawer 在程序化移动后触发 update（拖拽路径由 finishMovingAnnotation 触发）
+   */
+  notifyUpdate(index: number): void {
+    const annotation = this.recordList[index]
+    if (annotation) this.notifyChange('update', index, annotation)
+  }
+
+  /**
+   * 解析标注定位参数：number 按索引，string 按 id
+   */
+  resolveIndex(ref: number | string): number {
+    if (typeof ref === 'number') return ref
+    return this.recordList.findIndex((a) => a.id === ref)
+  }
+
+  /**
+   * 按索引或 id 获取单个标注（深拷贝快照）
+   */
+  getAnnotation(ref: number | string): Operate<Rect | Polygon> | undefined {
+    const index = this.resolveIndex(ref)
+    if (index < 0 || index >= this.recordList.length) return undefined
+    return deepClone(this.recordList[index])
+  }
+
+  /**
+   * 将当前全局样式应用到指定标注（按索引或 id），保存并通知 update
+   */
+  updateAnnotationStyle(ref: number | string): boolean {
+    const index = this.resolveIndex(ref)
+    if (index < 0 || index >= this.recordList.length) return false
+    this.recordList[index].style = this.getCurrentStyle()
+    this.notifyUpdate(index)
+    return true
   }
 
   /**
@@ -245,11 +296,13 @@ export class AnnotationManager {
       // 保存当前样式到标注
       const annotationWithStyle = {
         ...this.operate,
+        id: generateId(),
         style: this.getCurrentStyle()
       }
       this.recordList.push(annotationWithStyle)
       // 添加新标注后清空删除历史
       this.deleteHistory = []
+      this.notifyChange('create', this.recordList.length - 1, annotationWithStyle)
     }
 
     this.operate.data = []
@@ -310,11 +363,13 @@ export class AnnotationManager {
       // 保存当前样式到标注
       const annotationWithStyle = {
         ...this.operate,
+        id: generateId(),
         style: this.getCurrentStyle()
       }
       this.recordList.push(annotationWithStyle)
       // 添加新标注后清空删除历史
       this.deleteHistory = []
+      this.notifyChange('create', this.recordList.length - 1, annotationWithStyle)
     }
 
     this.operate = {
@@ -337,9 +392,13 @@ export class AnnotationManager {
       // 保存当前样式到标注
       const annotationWithStyle = {
         ...this.operate,
+        id: generateId(),
         style: this.getCurrentStyle()
       }
       this.recordList.push(annotationWithStyle)
+      // 添加新标注后清空删除历史（与 finishRectDrawing / finishPolygonDrawing 一致）
+      this.deleteHistory = []
+      this.notifyChange('create', this.recordList.length - 1, annotationWithStyle)
     }
     
     this.operate.data = []
@@ -378,9 +437,10 @@ export class AnnotationManager {
   }
 
   /**
-   * 选中指定索引的标注
+   * 选中指定索引或 id 的标注
    */
-  selectAnnotation(index: number): boolean {
+  selectAnnotation(ref: number | string): boolean {
+    const index = this.resolveIndex(ref)
     if (index < 0 || index >= this.recordList.length) {
       this.deselectAnnotation()
       return false
@@ -424,6 +484,7 @@ export class AnnotationManager {
     // 删除标注
     this.recordList.splice(index, 1)
     this.deselectAnnotation()
+    this.notifyChange('delete', index, annotation)
     return true
   }
 
@@ -466,11 +527,16 @@ export class AnnotationManager {
    * 完成标注移动
    */
   finishMovingAnnotation(): void {
+    const wasMovingOrResizing = this.isMovingAnnotation || this.isResizing
     this.isMovingAnnotation = false
     this.isResizing = false
     this.activeHandle = null
     this.originalRect = null
     this.originalPolygon = null
+
+    if (wasMovingOrResizing && this.selectedAnnotation) {
+      this.notifyUpdate(this.selectedAnnotation.index)
+    }
   }
 
   /**
@@ -680,7 +746,7 @@ export class AnnotationManager {
    * 获取所有标注数据
    */
   getAnnotations(): Operate<Rect | Polygon>[] {
-    return [...this.recordList]
+    return this.recordList.map((a) => deepClone(a))
   }
 
   /**
@@ -695,7 +761,7 @@ export class AnnotationManager {
     return {
       index: this.selectedAnnotation.index,
       type: this.selectedAnnotation.type,
-      data: annotation as Operate<Rect | Polygon>,
+      data: deepClone(annotation),
     }
   }
 
@@ -766,10 +832,11 @@ export class AnnotationManager {
 
   /**
    * 单独修改某个标注的标题样式（不影响全局默认）
-   * @param index - 标注索引
+   * @param ref - 标注索引或 id
    * @param style - 标题样式（部分覆盖）
    */
-  setAnnotationTitleStyle(index: number, style: Partial<TitleStyle>): boolean {
+  setAnnotationTitleStyle(ref: number | string, style: Partial<TitleStyle>): boolean {
+    const index = this.resolveIndex(ref)
     if (index < 0 || index >= this.recordList.length) return false
     const annotation = this.recordList[index]
     if (!annotation.style) {
@@ -779,15 +846,17 @@ export class AnnotationManager {
       ...(annotation.style.titleStyle || this.titleStyle),
       ...style
     }
+    this.notifyUpdate(index)
     return true
   }
 
   /**
    * 单独修改某个标注的标题位置（不影响全局默认）
-   * @param index - 标注索引
+   * @param ref - 标注索引或 id
    * @param position - 标题位置（部分覆盖）
    */
-  setAnnotationTitlePosition(index: number, position: Partial<TitlePosition>): boolean {
+  setAnnotationTitlePosition(ref: number | string, position: Partial<TitlePosition>): boolean {
+    const index = this.resolveIndex(ref)
     if (index < 0 || index >= this.recordList.length) return false
     const annotation = this.recordList[index]
     if (!annotation.style) {
@@ -797,6 +866,7 @@ export class AnnotationManager {
       ...(annotation.style.titlePosition || this.titlePosition),
       ...position
     }
+    this.notifyUpdate(index)
     return true
   }
 
@@ -845,10 +915,11 @@ export class AnnotationManager {
 
   /**
    * 设置标注标题（API调用）
-   * @param index - 标注索引
+   * @param ref - 标注索引或 id
    * @param title - 标题文本
    */
-  setTitle(index: number, title: string): boolean {
+  setTitle(ref: number | string, title: string): boolean {
+    const index = this.resolveIndex(ref)
     if (index < 0 || index >= this.recordList.length) return false
     const annotation = this.recordList[index]
     annotation.title = title || undefined
@@ -857,14 +928,16 @@ export class AnnotationManager {
     if (title) {
       this.captureTitleStyleSnapshot(annotation)
     }
+    this.notifyUpdate(index)
     return true
   }
 
   /**
    * 获取标注标题
-   * @param index - 标注索引
+   * @param ref - 标注索引或 id
    */
-  getTitle(index: number): string | undefined {
+  getTitle(ref: number | string): string | undefined {
+    const index = this.resolveIndex(ref)
     if (index < 0 || index >= this.recordList.length) return undefined
     return this.recordList[index].title
   }
@@ -931,6 +1004,7 @@ export class AnnotationManager {
       if (newTitle) {
         this.captureTitleStyleSnapshot(annotation)
       }
+      this.notifyUpdate(index)
       // 重新选中标注
       this.selectAnnotation(index)
     }

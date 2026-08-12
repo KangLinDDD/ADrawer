@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-12
+
+### Added - 标注变更事件系统
+
+- **事件订阅 API**：
+  - `on(event, listener)` / `off(event, listener)` - 订阅/取消订阅标注变更事件
+  - 内置零依赖 `Emitter`，`destroy()` 时自动清空所有监听器
+- **事件类型**（`DrawerEventMap`）：
+  - `create` - 新标注画完入库（矩形/多边形/文本）
+  - `delete` - 标注被删除
+  - `update` - 标注数据变化（拖拽/缩放结束、标题/文本/样式修改、程序化移动）
+  - `clear` - 清空所有标注
+  - `undo` - 撤销成功（含 Ctrl+Z 快捷键路径）
+- **事件载荷**（`ShapeChangePayload`）：携带 `id`、`type`、`index` 及标注数据的**深拷贝快照**，外部修改不影响内部状态
+- **导出类型**：`DrawerEventMap`、`DrawerEventName`、`DrawerListener`、`ShapeChangePayload`、`ChangeNotify`
+
+### Added - 标注稳定 ID 与按 id 定位
+
+- **稳定唯一 ID**：标注入库时自动生成 `id`（`Operate.id` / `TextAnnotation.id`），撤销、删除、重排后仍可稳定定位
+- **新增 API**：
+  - `getAnnotation(ref)` - 按索引或 id 获取单个矩形/多边形标注（深拷贝快照）
+  - `getTextAnnotation(ref)` - 按索引或 id 获取单个文本标注（深拷贝快照）
+- **既有 API 支持 id 定位**：以下方法的参数由 `index: number` 扩展为 `ref: number | string`，向后兼容：
+  - `setAnnotationTitle` / `getAnnotationTitle`
+  - `setAnnotationTitleStyle` / `setAnnotationTitlePosition`
+  - `selectAnnotation`
+  - `updateTextAnnotation` / `moveTextAnnotation` / `removeTextAnnotation` / `updateTextAnnotationStyle`
+- **`updateSelectedAnnotationStyle(ref?)` 重载**：不传参时操作当前选中标注（原有行为）；传入索引或 id 时直接更新指定标注
+
+### Changed
+
+- `getAnnotations()` / `getSelectedAnnotation()` 返回值改为深拷贝快照，外部修改不再影响内部状态
+
+### Fixed
+
+- 第三种绘制完成路径（双击结束等）入库时未清空删除历史，现与 `finishRectDrawing` / `finishPolygonDrawing` 行为一致
+
 ## [1.1.0] - 2026-08-11
 
 ### Added - 标注标题功能

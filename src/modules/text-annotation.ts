@@ -3,8 +3,9 @@
  * 负责文本标注的添加、编辑、移动、删除等功能
  */
 
-import type { TextAnnotation, TextStyle, Point, TextInputStyle } from './types'
+import type { TextAnnotation, TextStyle, Point, TextInputStyle, ChangeNotify } from './types'
 import type { ViewportManager } from './viewport'
+import { deepClone, generateId } from './utils'
 
 export class TextAnnotationManager {
   // 文本标注列表
@@ -56,7 +57,8 @@ export class TextAnnotationManager {
     private viewport: ViewportManager,
     private container: HTMLElement,
     private ctx: CanvasRenderingContext2D,
-    private renderCallback?: () => void
+    private renderCallback?: () => void,
+    private changeCallback?: ChangeNotify
   ) {
     this.createTextInput()
   }
@@ -175,17 +177,49 @@ export class TextAnnotationManager {
   }
 
   /**
+   * 上报文本标注变更（载荷携带深拷贝快照）
+   */
+  private notifyChange(event: 'create' | 'delete' | 'update', index: number, annotation: TextAnnotation): void {
+    if (!this.changeCallback || !annotation.id) return
+    this.changeCallback(event, {
+      id: annotation.id,
+      type: 'text',
+      index,
+      data: deepClone(annotation),
+    })
+  }
+
+  /**
+   * 解析文本标注定位参数：number 按索引，string 按 id
+   */
+  resolveIndex(ref: number | string): number {
+    if (typeof ref === 'number') return ref
+    return this.textAnnotations.findIndex((a) => a.id === ref)
+  }
+
+  /**
+   * 按索引或 id 获取单个文本标注（深拷贝快照）
+   */
+  getTextAnnotation(ref: number | string): TextAnnotation | undefined {
+    const index = this.resolveIndex(ref)
+    if (index < 0 || index >= this.textAnnotations.length) return undefined
+    return deepClone(this.textAnnotations[index])
+  }
+
+  /**
    * 更新指定文本标注的样式（部分覆盖，不影响全局默认和其他标注）
-   * @param index - 文本标注索引
+   * @param ref - 文本标注索引或 id
    * @param style - 样式（部分覆盖）
    */
-  updateTextAnnotationStyle(index: number, style: Partial<Pick<TextStyle, 'font' | 'color' | 'backgroundColor'>>): boolean {
+  updateTextAnnotationStyle(ref: number | string, style: Partial<Pick<TextStyle, 'font' | 'color' | 'backgroundColor'>>): boolean {
+    const index = this.resolveIndex(ref)
     if (index < 0 || index >= this.textAnnotations.length) return false
     const annotation = this.textAnnotations[index]
     annotation.style = {
       ...(annotation.style || this.getCurrentStyle()),
       ...style
     }
+    this.notifyChange('update', index, this.textAnnotations[index])
     return true
   }
 
@@ -212,6 +246,7 @@ export class TextAnnotationManager {
     }
     
     const textAnnotation: TextAnnotation = {
+      id: generateId(),
       position: { x, y },
       text,
       // 保存当前样式到标注
@@ -219,10 +254,12 @@ export class TextAnnotationManager {
       width: Math.max(metrics.width, 60),
       height: textHeight,
     }
-    
+
     this.textAnnotations.push(textAnnotation)
     const index = this.textAnnotations.length - 1
-    
+
+    this.notifyChange('create', index, textAnnotation)
+
     // 添加新标注后清空删除历史
     this.deleteHistory = []
     
@@ -235,7 +272,8 @@ export class TextAnnotationManager {
   /**
    * 更新文本标注内容
    */
-  updateTextAnnotation(index: number, text: string): boolean {
+  updateTextAnnotation(ref: number | string, text: string): boolean {
+    const index = this.resolveIndex(ref)
     if (index < 0 || index >= this.textAnnotations.length) return false
 
     const textAnnotation = this.textAnnotations[index]
@@ -247,38 +285,44 @@ export class TextAnnotationManager {
     textAnnotation.width = metrics.width
     textAnnotation.height = parseInt(this.textStyle.font) * 1.2
 
+    this.notifyChange('update', index, this.textAnnotations[index])
     return true
   }
 
   /**
    * 移动文本标注位置
    */
-  moveTextAnnotation(index: number, x: number, y: number): boolean {
+  moveTextAnnotation(ref: number | string, x: number, y: number): boolean {
+    const index = this.resolveIndex(ref)
     if (index < 0 || index >= this.textAnnotations.length) return false
 
     this.textAnnotations[index].position = { x, y }
+    this.notifyChange('update', index, this.textAnnotations[index])
     return true
   }
 
   /**
    * 删除文本标注
    */
-  removeTextAnnotation(index: number): boolean {
+  removeTextAnnotation(ref: number | string): boolean {
+    const index = this.resolveIndex(ref)
     if (index < 0 || index >= this.textAnnotations.length) return false
 
     const annotation = this.textAnnotations[index]
-    
+
     // 保存删除的记录到历史（用于撤销）
     this.deleteHistory.push({
       annotation: { ...annotation },
       index
     })
-    
+
     this.textAnnotations.splice(index, 1)
+
+    this.notifyChange('delete', index, annotation)
     
-    // 如果正在编辑该标注，取消编辑
+    // 如果正在编辑该标注，重置编辑状态（不触碰数组，避免误删下移的标注）
     if (this.editingTextIndex === index) {
-      this.cancelEditing()
+      this.resetEditingState()
     } else if (this.editingTextIndex !== null && this.editingTextIndex > index) {
       // 调整编辑索引
       this.editingTextIndex--
@@ -351,7 +395,9 @@ export class TextAnnotationManager {
 
     if (newText === "") {
       // 如果文本为空，删除该标注
+      const removed = this.textAnnotations[index]
       this.textAnnotations.splice(index, 1)
+      this.notifyChange('delete', index, removed)
     } else {
       const textData = this.textAnnotations[index]
       textData.text = newText
@@ -361,6 +407,7 @@ export class TextAnnotationManager {
       const metrics = this.ctx.measureText(textData.text)
       textData.width = metrics.width
       textData.height = parseInt(this.textStyle.font) * 1.2
+      this.notifyChange('update', index, textData)
     }
 
     this.resetEditingState()
@@ -381,7 +428,9 @@ export class TextAnnotationManager {
     if (index >= 0 && index < this.textAnnotations.length) {
       const textData = this.textAnnotations[index]
       if (textData.text === "" && this.textBeforeEditing === "") {
+        const removed = this.textAnnotations[index]
         this.textAnnotations.splice(index, 1)
+        this.notifyChange('delete', index, removed)
       }
     }
 
@@ -404,7 +453,9 @@ export class TextAnnotationManager {
 
     // 删除标注
     if (index >= 0 && index < this.textAnnotations.length) {
+      const removed = this.textAnnotations[index]
       this.textAnnotations.splice(index, 1)
+      this.notifyChange('delete', index, removed)
     }
 
     this.resetEditingState()
@@ -476,6 +527,10 @@ export class TextAnnotationManager {
    */
   finishMoving(): void {
     this.isTextMoving = false
+    if (this.editingTextIndex !== null) {
+      const annotation = this.textAnnotations[this.editingTextIndex]
+      if (annotation) this.notifyChange('update', this.editingTextIndex, annotation)
+    }
   }
 
   /**
@@ -519,7 +574,7 @@ export class TextAnnotationManager {
    * 获取所有文本标注
    */
   getTextAnnotations(): TextAnnotation[] {
-    return [...this.textAnnotations]
+    return this.textAnnotations.map((a) => deepClone(a))
   }
 
   /**
@@ -581,6 +636,8 @@ export class TextAnnotationManager {
     
     this.textAnnotations.splice(index, 1)
     this.selectedTextIndex = null
+
+    this.notifyChange('delete', index, annotation)
     
     // 调整编辑索引
     if (this.editingTextIndex !== null && this.editingTextIndex > index) {
@@ -599,7 +656,7 @@ export class TextAnnotationManager {
     if (!annotation) return null
     return {
       index: this.selectedTextIndex,
-      data: annotation
+      data: deepClone(annotation)
     }
   }
 

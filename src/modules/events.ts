@@ -30,7 +30,8 @@ export class EventHandler {
     private getDrawType: () => DrawType,
     private getBgImage: () => HTMLImageElement | null,
     private renderCallback: () => void,
-    private setDrawTypeCallback: (type: DrawType) => void
+    private setDrawTypeCallback: (type: DrawType) => void,
+    private notifyUndo: () => void
   ) {}
 
   /**
@@ -925,7 +926,8 @@ export class EventHandler {
 
     // 撤销操作
     if (e.key === "z" && (e.ctrlKey || e.metaKey)) {
-      this.annotationManager.withdraw() || this.textManager.withdraw()
+      const undone = this.annotationManager.withdraw() || this.textManager.withdraw()
+      if (undone) this.notifyUndo()
       this.renderCallback()
       return
     }

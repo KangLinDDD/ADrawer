@@ -121,3 +121,24 @@ export function getZoomDelta(currentScale: number, zoomIn: boolean): number {
     return zoomIn ? 0.02 : -0.02
   }
 }
+
+/**
+ * 深拷贝（优先 structuredClone，回退 JSON 序列化）
+ * 仅用于纯 JSON 安全数据（标注数据均为数字/字符串/普通对象）
+ */
+export function deepClone<T>(value: T): T {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value)
+  }
+  return JSON.parse(JSON.stringify(value))
+}
+
+/**
+ * 生成标注唯一 ID（优先 crypto.randomUUID，旧环境回退随机串）
+ */
+export function generateId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}

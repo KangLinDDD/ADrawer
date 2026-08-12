@@ -23,6 +23,8 @@ export type Polygon = {
 
 /** 文本标注 */
 export type TextAnnotation = {
+  /** 稳定唯一 ID（入库时生成） */
+  id?: string
   position: { x: number; y: number }
   text: string
   width: number
@@ -90,6 +92,8 @@ export type AnnotationStyle = {
 
 /** 操作记录 */
 export type Operate<T extends Shape> = {
+  /** 稳定唯一 ID（入库时生成；绘制中的临时对象无 id） */
+  id?: string
   type: "rect" | "polygon" | "drag" | "text" | ""
   data: T[]
   status: "fullfilled" | "pending"
@@ -203,3 +207,28 @@ export type ViewportOffset = {
   x: number
   y: number
 }
+
+/** 标注变更事件载荷（create/delete/update 共用） */
+export type ShapeChangePayload =
+  | { id: string; type: 'rect' | 'polygon'; index: number; data: Operate<Rect | Polygon> }
+  | { id: string; type: 'text'; index: number; data: TextAnnotation }
+
+/** Drawer 事件表 */
+export type DrawerEventMap = {
+  /** 新标注画完入库 */
+  create: ShapeChangePayload
+  /** 标注被删除 */
+  delete: ShapeChangePayload
+  /** 标注数据变化（移动/缩放结束、标题/文本/样式修改） */
+  update: ShapeChangePayload
+  /** 清空所有标注 */
+  clear: undefined
+  /** 撤销成功 */
+  undo: undefined
+}
+
+export type DrawerEventName = keyof DrawerEventMap
+export type DrawerListener<K extends DrawerEventName> = (payload: DrawerEventMap[K]) => void
+
+/** 标注变更通知回调（manager 内部上报给 Drawer 使用） */
+export type ChangeNotify = (event: 'create' | 'delete' | 'update', payload: ShapeChangePayload) => void
