@@ -135,6 +135,7 @@ drawer.clearTextAnnotations();
 
 // Selection
 drawer.selectAnnotation(index);
+drawer.selectAnnotation(index, { lock: true });  // Locked selection: highlighted but not draggable/resizable via mouse (programmatic APIs still work)
 drawer.deselectAnnotation();
 drawer.deleteSelectedAnnotation();
 drawer.moveSelectedAnnotation(dx, dy);

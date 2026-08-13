@@ -135,6 +135,7 @@ drawer.clearTextAnnotations();
 
 // 选中操作
 drawer.selectAnnotation(index);
+drawer.selectAnnotation(index, { lock: true });  // 锁定选中：显示高亮，但禁止鼠标拖动与缩放（程序化 API 不受影响）
 drawer.deselectAnnotation();
 drawer.deleteSelectedAnnotation();
 drawer.moveSelectedAnnotation(dx, dy);

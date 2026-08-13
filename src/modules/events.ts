@@ -6,8 +6,9 @@
 import type { DrawType, Point } from './types'
 import type { ViewportManager } from './viewport'
 import type { AnnotationManager } from './annotations'
-import type { TextAnnotationManager } from './text-annotation'
+import type { TextAnnotationManager } from './shapes/text-manager'
 import type { Renderer } from './renderer'
+import { defaultShapeRegistry } from './registry'
 // getZoomDelta is imported in index.ts
 
 export class EventHandler {
@@ -104,9 +105,8 @@ export class EventHandler {
         if (this.textManager.selectedTextIndex === textIndex) {
           this.textManager.startMoving(e, textIndex)
         } else {
-          // 否则选中文本（取消其他选中）
-          this.annotationManager.deselectAnnotation()
-          this.textManager.selectTextAnnotation(textIndex)
+          // 否则选中文本（取消其他选中，统一互斥）
+          defaultShapeRegistry.selectShapeExclusive(this.annotationManager, this.textManager, { kind: 'text', index: textIndex })
         }
         this.renderCallback()
         return
@@ -197,9 +197,8 @@ export class EventHandler {
         if (this.textManager.selectedTextIndex === textIndex) {
           this.textManager.startMoving(e, textIndex)
         } else {
-          // 否则选中文本（取消其他选中）
-          this.annotationManager.deselectAnnotation()
-          this.textManager.selectTextAnnotation(textIndex)
+          // 否则选中文本（取消其他选中，统一互斥）
+          defaultShapeRegistry.selectShapeExclusive(this.annotationManager, this.textManager, { kind: 'text', index: textIndex })
         }
         this.renderCallback()
         return
@@ -263,9 +262,8 @@ export class EventHandler {
         if (this.textManager.selectedTextIndex === textIndex) {
           this.textManager.startMoving(e, textIndex)
         } else {
-          // 否则选中文本（取消其他选中）
-          this.annotationManager.deselectAnnotation()
-          this.textManager.selectTextAnnotation(textIndex)
+          // 否则选中文本（取消其他选中，统一互斥）
+          defaultShapeRegistry.selectShapeExclusive(this.annotationManager, this.textManager, { kind: 'text', index: textIndex })
         }
         this.renderCallback()
         return
@@ -315,9 +313,8 @@ export class EventHandler {
         if (this.textManager.selectedTextIndex === textIndex) {
           this.textManager.startMoving(e, textIndex)
         } else {
-          // 否则选中文本（取消其他选中）
-          this.annotationManager.deselectAnnotation()
-          this.textManager.selectTextAnnotation(textIndex)
+          // 否则选中文本（取消其他选中，统一互斥）
+          defaultShapeRegistry.selectShapeExclusive(this.annotationManager, this.textManager, { kind: 'text', index: textIndex })
         }
         this.renderCallback()
         return
@@ -339,18 +336,6 @@ export class EventHandler {
       // 无模式：可以选中和编辑所有类型的标注
       this.handleNoModeClick(e, imgCoords)
     }
-  }
-
-  /**
-   * 拖拽模式下检查文本点击
-   */
-  private checkTextClickInDragMode(e: MouseEvent): boolean {
-    const result = this.textManager.checkTextClickForMove(e)
-    if (result.handled) {
-      this.canvas.style.cursor = "grabbing"
-      return true
-    }
-    return false
   }
 
   /**
@@ -441,34 +426,6 @@ export class EventHandler {
   }
 
   /**
-   * 纯移动检测：检测是否点击了矩形
-   */
-  private handleRectModeClickForMove(e: MouseEvent, imgCoords: Point): boolean {
-    const clicked = this.annotationManager.getAnnotationAtPoint(imgCoords)
-    if (clicked && clicked.type === "rect") {
-      this.annotationManager.selectAnnotation(clicked.index)
-      this.annotationManager.startMovingAnnotation(e)
-      this.renderCallback()
-      return true
-    }
-    return false
-  }
-
-  /**
-   * 纯移动检测：检测是否点击了多边形
-   */
-  private handlePolygonModeClickForMove(e: MouseEvent, imgCoords: Point): boolean {
-    const clicked = this.annotationManager.getAnnotationAtPoint(imgCoords)
-    if (clicked && clicked.type === "polygon") {
-      this.annotationManager.selectAnnotation(clicked.index)
-      this.annotationManager.startMovingAnnotation(e)
-      this.renderCallback()
-      return true
-    }
-    return false
-  }
-
-  /**
    * 无模式下的点击处理
    */
   private handleNoModeClick(e: MouseEvent, imgCoords: Point): void {
@@ -479,9 +436,8 @@ export class EventHandler {
       if (this.textManager.selectedTextIndex === textIndex) {
         this.textManager.startMoving(e, textIndex)
       } else {
-        // 否则选中文本（取消其他选中）
-        this.annotationManager.deselectAnnotation()
-        this.textManager.selectTextAnnotation(textIndex)
+        // 否则选中文本（取消其他选中，统一互斥）
+        defaultShapeRegistry.selectShapeExclusive(this.annotationManager, this.textManager, { kind: 'text', index: textIndex })
       }
       this.renderCallback()
       return
@@ -535,7 +491,7 @@ export class EventHandler {
     }
 
     // 处理文本移动
-    if (this.textManager.isTextMoving && this.textManager.editingTextIndex !== null) {
+    if (this.textManager.isTextMoving && this.textManager.movingTextIndex !== null) {
       if (this.textManager.moveAnnotation(e)) {
         this.renderCallback()
       }
@@ -596,8 +552,17 @@ export class EventHandler {
     const dy = (e.clientY - this.annotationManager.annotationMoveStart.y) / this.viewport.scale
 
     this.annotationManager.moveSelectedAnnotation(dx, dy)
-    this.annotationManager.annotationMoveStart = { x: e.clientX, y: e.clientY }
+    this.annotationManager.updateMoveStart({ x: e.clientX, y: e.clientY })
     this.renderCallback()
+  }
+
+  /**
+   * 悬停点是否为锁定选中的标注（锁定态不显示 move 光标）
+   */
+  private isHoverLockedAnnotation(clicked: { index: number } | null): boolean {
+    if (!clicked || !this.annotationManager.selectedAnnotation) return false
+    return this.annotationManager.selectedAnnotation.locked === true &&
+      clicked.index === this.annotationManager.selectedAnnotation.index
   }
 
   /**
@@ -628,7 +593,7 @@ export class EventHandler {
         // 检查矩形/多边形
         const clicked = this.annotationManager.getAnnotationAtPoint(imgCoords)
         if (clicked) {
-          this.canvas.style.cursor = "move"
+          this.canvas.style.cursor = this.isHoverLockedAnnotation(clicked) ? "default" : "move"
           return
         }
       }
@@ -683,7 +648,7 @@ export class EventHandler {
     const imgCoords = this.viewport.toImageCoordinates(e.offsetX, e.offsetY)
     const clicked = this.annotationManager.getAnnotationAtPoint(imgCoords)
     if (clicked) {
-      this.canvas.style.cursor = "move"
+      this.canvas.style.cursor = this.isHoverLockedAnnotation(clicked) ? "default" : "move"
       return
     }
 
@@ -713,7 +678,7 @@ export class EventHandler {
     const imgCoords = this.viewport.toImageCoordinates(e.offsetX, e.offsetY)
     const clicked = this.annotationManager.getAnnotationAtPoint(imgCoords)
     if (clicked) {
-      this.canvas.style.cursor = "move"
+      this.canvas.style.cursor = this.isHoverLockedAnnotation(clicked) ? "default" : "move"
       return
     }
 
@@ -752,7 +717,7 @@ export class EventHandler {
     // 检查矩形/多边形
     const imgCoords = this.viewport.toImageCoordinates(e.offsetX, e.offsetY)
     const clicked = this.annotationManager.getAnnotationAtPoint(imgCoords)
-    this.canvas.style.cursor = clicked ? "move" : "grab"
+    this.canvas.style.cursor = clicked ? (this.isHoverLockedAnnotation(clicked) ? "default" : "move") : "grab"
   }
 
   /**
@@ -781,7 +746,7 @@ export class EventHandler {
     // 检查矩形/多边形
     const imgCoords = this.viewport.toImageCoordinates(e.offsetX, e.offsetY)
     const clicked = this.annotationManager.getAnnotationAtPoint(imgCoords)
-    this.canvas.style.cursor = clicked ? "move" : "default"
+    this.canvas.style.cursor = clicked ? (this.isHoverLockedAnnotation(clicked) ? "default" : "move") : "default"
   }
 
   /**
@@ -804,7 +769,7 @@ export class EventHandler {
       } else if (drawType === "") {
         this.canvas.style.cursor = "move"
       } else {
-        this.textManager.editingTextIndex = null
+        this.textManager.endTextMoving()
         this.canvas.style.cursor = "default"
       }
     }
@@ -872,7 +837,8 @@ export class EventHandler {
   }
 
   /**
-   * 处理鼠标单击（用于多边形绘制）
+   * 处理鼠标单击（用于多边形绘制；加点已收敛到 mousedown 通道，
+   * 此处仅保留防误触发的守卫与 justDeselected 消费）
    */
   handleClick(e: MouseEvent): void {
     const drawType = this.getDrawType()
@@ -893,18 +859,7 @@ export class EventHandler {
       return
     }
 
-    const imgCoords = this.viewport.toImageCoordinates(e.offsetX, e.offsetY)
-    
-    if (this.checkPolygonPointValid(imgCoords)) {
-      if (!this.annotationManager.isDrawing) {
-        this.annotationManager.startPolygonDrawing(imgCoords)
-      } else {
-        this.annotationManager.addPolygonPoint(imgCoords)
-      }
-    }
-
-    this.annotationManager.updatePolygonTempPoint(imgCoords)
-    this.renderCallback()
+    // 加点已由 mousedown 通道完成（±5px 去重由 PolygonStrategy.addPoint 处理）
   }
 
   /**
@@ -926,7 +881,7 @@ export class EventHandler {
 
     // 撤销操作
     if (e.key === "z" && (e.ctrlKey || e.metaKey)) {
-      const undone = this.annotationManager.withdraw() || this.textManager.withdraw()
+      const undone = defaultShapeRegistry.withdrawAll(this.annotationManager, this.textManager)
       if (undone) this.notifyUndo()
       this.renderCallback()
       return

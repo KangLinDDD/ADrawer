@@ -3,17 +3,20 @@
  * 负责文本标注的添加、编辑、移动、删除等功能
  */
 
-import type { TextAnnotation, TextStyle, Point, TextInputStyle, ChangeNotify } from './types'
-import type { ViewportManager } from './viewport'
-import { deepClone, generateId } from './utils'
+import type { TextAnnotation, TextStyle, Point, TextInputStyle, ChangeNotify } from '../types'
+import type { ViewportManager } from '../viewport'
+import { deepClone, generateId } from '../utils'
+import { clampPoint, notifyShapeChange } from './shared'
 
 export class TextAnnotationManager {
   // 文本标注列表
   public textAnnotations: TextAnnotation[] = []
   
-  // 编辑状态
+  // 编辑状态（DOM 输入框编辑中的标注索引）
   public editingTextIndex: number | null = null
   public currentEditingIndex: number | null = null
+  // 移动状态（拖动目标索引，与编辑态分离）
+  public movingTextIndex: number | null = null
   public isTextMoving = false
   public textMoveStart: Point = { x: 0, y: 0 }
   public textBeforeEditing = ""
@@ -183,13 +186,7 @@ export class TextAnnotationManager {
    * 上报文本标注变更（载荷携带深拷贝快照）
    */
   private notifyChange(event: 'create' | 'delete' | 'update', index: number, annotation: TextAnnotation): void {
-    if (!this.changeCallback || !annotation.id) return
-    this.changeCallback(event, {
-      id: annotation.id,
-      type: 'text',
-      index,
-      data: deepClone(annotation),
-    })
+    notifyShapeChange(this.changeCallback, 'text', event, index, annotation)
   }
 
   /**
@@ -231,13 +228,7 @@ export class TextAnnotationManager {
    * clampEnabled 为 false 或图片未加载（originalWidth/originalHeight 为 0）时跳过 clamp，原样返回
    */
   private clampToImageBounds(point: Point): Point {
-    if (!this.clampEnabled) return point
-    const { originalWidth, originalHeight } = this.viewport
-    if (!originalWidth || !originalHeight) return point
-    return {
-      x: Math.max(0, Math.min(point.x, originalWidth)),
-      y: Math.max(0, Math.min(point.y, originalHeight)),
-    }
+    return clampPoint(this.viewport, point, this.clampEnabled)
   }
 
   /**
@@ -348,6 +339,13 @@ export class TextAnnotationManager {
     } else if (this.editingTextIndex !== null && this.editingTextIndex > index) {
       // 调整编辑索引
       this.editingTextIndex--
+    }
+
+    // 移动目标被删除或下移时同步处理
+    if (this.movingTextIndex === index) {
+      this.endTextMoving()
+    } else if (this.movingTextIndex !== null && this.movingTextIndex > index) {
+      this.movingTextIndex--
     }
     
     return true
@@ -519,7 +517,7 @@ export class TextAnnotationManager {
   startMoving(e: MouseEvent, index: number): boolean {
     if (index < 0 || index >= this.textAnnotations.length) return false
 
-    this.editingTextIndex = index
+    this.movingTextIndex = index
     this.isTextMoving = true
     this.textMoveStart = { x: e.clientX, y: e.clientY }
     return true
@@ -529,12 +527,12 @@ export class TextAnnotationManager {
    * 移动文本标注
    */
   moveAnnotation(e: MouseEvent): boolean {
-    if (!this.isTextMoving || this.editingTextIndex === null) return false
+    if (!this.isTextMoving || this.movingTextIndex === null) return false
 
     const dx = e.clientX - this.textMoveStart.x
     const dy = e.clientY - this.textMoveStart.y
 
-    const textData = this.textAnnotations[this.editingTextIndex]
+    const textData = this.textAnnotations[this.movingTextIndex]
     if (textData) {
       textData.position.x += dx / this.viewport.scale
       textData.position.y += dy / this.viewport.scale
@@ -549,10 +547,26 @@ export class TextAnnotationManager {
    */
   finishMoving(): void {
     this.isTextMoving = false
-    if (this.editingTextIndex !== null) {
-      const annotation = this.textAnnotations[this.editingTextIndex]
-      if (annotation) this.notifyChange('update', this.editingTextIndex, annotation)
+    if (this.movingTextIndex !== null) {
+      const annotation = this.textAnnotations[this.movingTextIndex]
+      if (annotation) this.notifyChange('update', this.movingTextIndex, annotation)
     }
+    this.movingTextIndex = null
+  }
+
+  /**
+   * 结束文本移动（不触碰编辑态）
+   */
+  endTextMoving(): void {
+    this.isTextMoving = false
+    this.movingTextIndex = null
+  }
+
+  /**
+   * 当前是否处于 DOM 编辑可见状态（输入框显示中）
+   */
+  isEditingVisible(): boolean {
+    return this.textInput?.style.display === 'block'
   }
 
   /**
@@ -664,6 +678,11 @@ export class TextAnnotationManager {
     // 调整编辑索引
     if (this.editingTextIndex !== null && this.editingTextIndex > index) {
       this.editingTextIndex--
+    }
+
+    // 调整移动索引
+    if (this.movingTextIndex !== null && this.movingTextIndex > index) {
+      this.movingTextIndex--
     }
     
     return true

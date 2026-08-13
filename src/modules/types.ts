@@ -128,6 +128,8 @@ export type DrawerOptions = {
 export type SelectedAnnotation = {
   index: number
   type: "rect" | "polygon" | "text"
+  /** 锁定选中态：true 时无控制点（不可 resize）；可选字段，缺省视为 false */
+  locked?: boolean
 }
 
 /** 控制点信息 */

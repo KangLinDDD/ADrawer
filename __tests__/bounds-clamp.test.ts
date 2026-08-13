@@ -1,5 +1,5 @@
 import { AnnotationManager } from '../src/modules/annotations'
-import { TextAnnotationManager } from '../src/modules/text-annotation'
+import { TextAnnotationManager } from '../src/modules/shapes/text-manager'
 import { ViewportManager } from '../src/modules/viewport'
 import Drawer from '../src/index'
 import type { Rect, Polygon } from '../src/modules/types'

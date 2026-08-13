@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-08-13
 
 ### Added - 图片边界约束（clamp）
 
@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 约束作用于绘制入口：矩形起点/拖拽更新点、多边形起点/加点/临时点、文本放置点
 - 图片未加载（`originalWidth` / `originalHeight` 为 0）时自动跳过约束
 - 传 `clampToImageBounds: false` 可关闭，恢复旧行为
+
+### Added - 锁定选中 API
+
+- **`selectAnnotation(ref, { lock: true })`**：锁定选中某标注——显示选中高亮，但禁止鼠标拖动与控制点缩放（锁定态不绘制控制点、悬停不显示 move 光标）
+- 锁定态属于"本次选中"：取消选中或选中其他标注后自动失效，不随标注持久化
+- 仅限制鼠标交互，程序化 API（`moveSelectedAnnotation` 等）不受影响
+- 缺省参数（`selectAnnotation(ref)`）行为不变，向后兼容
+
+### Changed - 内部架构重构（形状策略 + 注册表）
+
+- 将矩形/多边形/文本标注的**形状特异逻辑**从单体 `annotations.ts` / `text-annotation.ts` 拆分为独立策略模块（`src/modules/shapes/`、`src/modules/renderers/`），共享状态统一收敛到 `AnnotationStore`，由 `ShapeRegistry` 按形状类型分发
+- 新增形状（如星型）只需新增一个策略文件 + 一行注册，事件层与渲染层零改动
+- 顺带修复：删除 3 个从未被调用的死方法、收敛两处越权直写、多边形加点双通道收敛为单通道、拆分文本标注"编辑态"与"移动态"混用的索引
+- **对外公共 API 与数据格式完全不变**（`Operate` / `Rect` / `Polygon` / `TextAnnotation` / 事件载荷均保持原样）
 
 ## [1.2.0] - 2026-08-12
 

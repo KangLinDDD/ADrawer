@@ -55,7 +55,7 @@ export {
 // 导出各个模块（供高级用户使用）
 export { ViewportManager } from './modules/viewport'
 export { AnnotationManager } from './modules/annotations'
-export { TextAnnotationManager } from './modules/text-annotation'
+export { TextAnnotationManager } from './modules/shapes/text-manager'
 export { Renderer } from './modules/renderer'
 export { EventHandler } from './modules/events'
 export { Emitter } from './modules/emitter'
@@ -80,7 +80,7 @@ import type {
 import { getImageTypeFromUrl, base64ToFile, base64ToBlob, getZoomDelta } from './modules/utils'
 import { ViewportManager } from './modules/viewport'
 import { AnnotationManager } from './modules/annotations'
-import { TextAnnotationManager } from './modules/text-annotation'
+import { TextAnnotationManager } from './modules/shapes/text-manager'
 import { Renderer } from './modules/renderer'
 import { EventHandler } from './modules/events'
 import { Emitter } from './modules/emitter'
@@ -204,7 +204,7 @@ export class Drawer {
     // 设置图片边界约束开关（默认 true）
     this.textManager.clampEnabled = clampToImageBounds
 
-    this.renderer = new Renderer(this.ctx, this.viewport, this.annotationManager, this.textManager, this.canvas)
+    this.renderer = new Renderer(this.ctx, this.viewport, this.annotationManager, this.textManager)
     this.eventHandler = new EventHandler(
       this.canvas,
       this.viewport,
@@ -746,9 +746,10 @@ export class Drawer {
   /**
    * 选中指定索引的标注
    * @param index - 标注索引或标注 id
+   * @param options.lock - true 时进入锁定选中态：显示选中高亮，但禁止鼠标拖动与控制点缩放（程序化 API 不受影响）
    */
-  public selectAnnotation(index: number | string): void {
-    if (this.annotationManager.selectAnnotation(index)) {
+  public selectAnnotation(index: number | string, options?: { lock?: boolean }): void {
+    if (this.annotationManager.selectAnnotation(index, options)) {
       this.render()
     }
   }
@@ -981,6 +982,9 @@ export class Drawer {
   public destroy(): void {
     // 清空事件监听器
     this.emitter.clear()
+
+    // 移除挂在 document 上的全局 keydown 监听（canvas 上的监听随节点移除而失效）
+    document.removeEventListener("keydown", this.events.keydown)
 
     // 清理文本输入框
     this.textManager.destroy()
