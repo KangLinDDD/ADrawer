@@ -76,15 +76,29 @@ drawer.exportAnnotationImage().then(base64 => {
 
 ```typescript
 interface DrawerOptions {
-  id: string;                    // 容器元素 ID（必填）
-  drawType?: DrawType;           // 默认绘制类型
-  useEvents?: boolean;           // 启用事件（默认：true）
-  annotationColor?: string | ColorConfig;  // 标注颜色
-  lineStyle?: LineStyle;         // 边线样式: 'solid' | 'dashed' | 'dotted'
-  vertexStyle?: Partial<VertexStyle>;      // 顶点样式
-  textStyle?: Partial<TextStyle>;          // 文本样式
+  id: string;                          // 容器元素 ID（必填）
+  drawType?: DrawType;                 // 默认绘制类型（默认：''）
+  useEvents?: boolean;                 // 启用事件（默认：true）
+  annotationColor?: string | ColorConfig;  // 标注颜色（默认：'red'）
+  lineStyle?: LineStyle;               // 边线样式: 'solid' | 'dashed' | 'dotted'
+  vertexStyle?: Partial<VertexStyle>;  // 顶点样式
+  textStyle?: Partial<TextStyle>;      // 文本样式
+  enableTitle?: boolean;               // 启用标注标题功能（默认：false）
+  clampToImageBounds?: boolean;        // 绘制坐标约束在图片边界内（默认：true）
 }
 ```
+
+| 选项 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `id` | `string` | —（必填） | 容器元素 ID |
+| `drawType` | `DrawType` | `''` | 默认绘制类型：`'rect'` / `'polygon'` / `'drag'` / `'text'` / `''` |
+| `useEvents` | `boolean` | `true` | 启用鼠标/键盘事件绑定 |
+| `annotationColor` | `string \| ColorConfig` | `'red'` | 标注颜色，可分别配置矩形/多边形颜色 |
+| `lineStyle` | `LineStyle` | `'solid'` | 边线样式：`'solid'` / `'dashed'` / `'dotted'` |
+| `vertexStyle` | `Partial<VertexStyle>` | 见 `VertexStyle` | 多边形顶点样式（大小、颜色、形状等） |
+| `textStyle` | `Partial<TextStyle>` | 见 `TextStyle` | 文本标注样式（字体、颜色、背景等） |
+| `enableTitle` | `boolean` | `false` | 启用标注标题功能（需显式开启） |
+| `clampToImageBounds` | `boolean` | `true` | 绘制时将坐标约束在图片边界内（矩形/多边形/文本），避免存储负值或超界坐标；图片未加载时自动跳过，传 `false` 可关闭 |
 
 ### 绘制类型
 

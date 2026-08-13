@@ -76,15 +76,29 @@ drawer.exportAnnotationImage().then(base64 => {
 
 ```typescript
 interface DrawerOptions {
-  id: string;                    // Container element ID (required)
-  drawType?: DrawType;           // Default draw type
-  useEvents?: boolean;           // Enable events (default: true)
-  annotationColor?: string | ColorConfig;  // Annotation colors
-  lineStyle?: LineStyle;         // Line style: 'solid' | 'dashed' | 'dotted'
-  vertexStyle?: Partial<VertexStyle>;      // Vertex style
-  textStyle?: Partial<TextStyle>;          // Text style
+  id: string;                          // Container element ID (required)
+  drawType?: DrawType;                 // Default draw type (default: '')
+  useEvents?: boolean;                 // Enable events (default: true)
+  annotationColor?: string | ColorConfig;  // Annotation colors (default: 'red')
+  lineStyle?: LineStyle;               // Line style: 'solid' | 'dashed' | 'dotted'
+  vertexStyle?: Partial<VertexStyle>;  // Vertex style
+  textStyle?: Partial<TextStyle>;      // Text style
+  enableTitle?: boolean;               // Enable annotation titles (default: false)
+  clampToImageBounds?: boolean;        // Clamp drawing coords to image bounds (default: true)
 }
 ```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `id` | `string` | — (required) | Container element ID |
+| `drawType` | `DrawType` | `''` | Default draw type: `'rect'` / `'polygon'` / `'drag'` / `'text'` / `''` |
+| `useEvents` | `boolean` | `true` | Enable mouse/keyboard event bindings |
+| `annotationColor` | `string \| ColorConfig` | `'red'` | Annotation colors; rect/polygon can be configured separately |
+| `lineStyle` | `LineStyle` | `'solid'` | Line style: `'solid'` / `'dashed'` / `'dotted'` |
+| `vertexStyle` | `Partial<VertexStyle>` | See `VertexStyle` | Polygon vertex style (size, colors, shape, etc.) |
+| `textStyle` | `Partial<TextStyle>` | See `TextStyle` | Text annotation style (font, color, background, etc.) |
+| `enableTitle` | `boolean` | `false` | Enable annotation title feature (must be explicitly enabled) |
+| `clampToImageBounds` | `boolean` | `true` | Clamp drawing coordinates (rect/polygon/text) to the image bounds, preventing negative or out-of-range stored coordinates; automatically skipped before the image is loaded. Set `false` to disable |
 
 ### Draw Types
 

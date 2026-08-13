@@ -120,6 +120,8 @@ export type DrawerOptions = {
   textStyle?: Partial<TextStyle>
   /** 是否启用标注标题功能（默认 false，需显式开启） */
   enableTitle?: boolean
+  /** 是否将绘制坐标约束在图片边界内（默认 true，图片未加载时自动跳过） */
+  clampToImageBounds?: boolean
 }
 
 /** 选中标注信息 */

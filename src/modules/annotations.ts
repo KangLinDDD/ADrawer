@@ -103,6 +103,9 @@ export class AnnotationManager {
   // 是否启用标题功能（默认 false，需在 DrawerOptions 中显式开启）
   public enableTitle = false
 
+  // 是否将绘制坐标约束在图片边界内（默认 true，由 DrawerOptions.clampToImageBounds 控制）
+  public clampEnabled = true
+
   constructor(
     private viewport: ViewportManager,
     private container?: HTMLElement,
@@ -262,9 +265,24 @@ export class AnnotationManager {
   }
 
   /**
+   * 将点约束到图片边界内（原图像素坐标系）
+   * clampEnabled 为 false 或图片未加载（originalWidth/originalHeight 为 0）时跳过 clamp，原样返回
+   */
+  private clampToImageBounds(point: Point): Point {
+    if (!this.clampEnabled) return point
+    const { originalWidth, originalHeight } = this.viewport
+    if (!originalWidth || !originalHeight) return point
+    return {
+      x: Math.max(0, Math.min(point.x, originalWidth)),
+      y: Math.max(0, Math.min(point.y, originalHeight)),
+    }
+  }
+
+  /**
    * 开始绘制矩形
    */
   startRectDrawing(startPoint: Point): void {
+    startPoint = this.clampToImageBounds(startPoint)
     this.isDrawing = true
     this.drawStartPoint = startPoint
     this.operate = {
@@ -279,6 +297,7 @@ export class AnnotationManager {
    */
   updateRectDrawing(currentPoint: Point): void {
     if (!this.isDrawing || this.operate.type !== "rect") return
+    currentPoint = this.clampToImageBounds(currentPoint)
     const rect = this.operate.data[0] as Rect
     rect.width = currentPoint.x - this.drawStartPoint.x
     rect.height = currentPoint.y - this.drawStartPoint.y
@@ -314,6 +333,7 @@ export class AnnotationManager {
    * 开始绘制多边形
    */
   startPolygonDrawing(startPoint: Point): void {
+    startPoint = this.clampToImageBounds(startPoint)
     this.isDrawing = true
     this.operate = {
       type: "polygon",
@@ -328,6 +348,7 @@ export class AnnotationManager {
    */
   addPolygonPoint(point: Point): boolean {
     if (!this.isDrawing || this.operate.type !== "polygon") return false
+    point = this.clampToImageBounds(point)
     
     // 避免添加重复点
     const lastPoint = this.operate.data.length > 0 
@@ -348,7 +369,7 @@ export class AnnotationManager {
    * 更新多边形临时点
    */
   updatePolygonTempPoint(point: Point): void {
-    this.tempPolygonPoint = point
+    this.tempPolygonPoint = this.clampToImageBounds(point)
   }
 
   /**

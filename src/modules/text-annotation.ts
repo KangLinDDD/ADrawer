@@ -21,6 +21,9 @@ export class TextAnnotationManager {
   // 选中状态（非编辑状态下的选中）
   public selectedTextIndex: number | null = null
 
+  // 是否将标注坐标约束在图片边界内（默认 true，由 DrawerOptions.clampToImageBounds 控制）
+  public clampEnabled = true
+
   // DOM 元素
   public textInput: HTMLInputElement | null = null
 
@@ -224,12 +227,31 @@ export class TextAnnotationManager {
   }
 
   /**
+   * 将点约束到图片边界内（原图像素坐标系）
+   * clampEnabled 为 false 或图片未加载（originalWidth/originalHeight 为 0）时跳过 clamp，原样返回
+   */
+  private clampToImageBounds(point: Point): Point {
+    if (!this.clampEnabled) return point
+    const { originalWidth, originalHeight } = this.viewport
+    if (!originalWidth || !originalHeight) return point
+    return {
+      x: Math.max(0, Math.min(point.x, originalWidth)),
+      y: Math.max(0, Math.min(point.y, originalHeight)),
+    }
+  }
+
+  /**
    * 添加文本标注
    * @param x - 图像坐标 X（标注背景框左上角）
    * @param y - 图像坐标 Y（标注背景框左上角）
    * @param text - 初始文本（可选，默认为空字符串）
    */
   addTextAnnotation(x: number, y: number, text: string = ""): number {
+    // 约束到图片边界内
+    const position = this.clampToImageBounds({ x, y })
+    x = position.x
+    y = position.y
+
     // 测量文本尺寸
     this.ctx.font = this.textStyle.font
     const measureText = text || "输入文字..."

@@ -126,7 +126,7 @@ export class Drawer {
   public drawType: DrawType = ""
 
   constructor(options: DrawerOptions) {
-    const { drawType, useEvents = true, id = "container", annotationColor, lineStyle, vertexStyle, textStyle, enableTitle = false } = options
+    const { drawType, useEvents = true, id = "container", annotationColor, lineStyle, vertexStyle, textStyle, enableTitle = false, clampToImageBounds = true } = options
 
     // 获取容器
     const container = document.getElementById(id)
@@ -184,6 +184,9 @@ export class Drawer {
     if (enableTitle) {
       this.annotationManager.initTitleSupport()
     }
+
+    // 设置图片边界约束开关（默认 true）
+    this.annotationManager.clampEnabled = clampToImageBounds
     
     this.textManager = new TextAnnotationManager(
       this.viewport,
@@ -197,6 +200,10 @@ export class Drawer {
     if (textStyle) {
       this.textManager.setTextStyle(textStyle)
     }
+
+    // 设置图片边界约束开关（默认 true）
+    this.textManager.clampEnabled = clampToImageBounds
+
     this.renderer = new Renderer(this.ctx, this.viewport, this.annotationManager, this.textManager, this.canvas)
     this.eventHandler = new EventHandler(
       this.canvas,

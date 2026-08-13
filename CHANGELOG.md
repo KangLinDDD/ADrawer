@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - 图片边界约束（clamp）
+
+- **新增 `clampToImageBounds` 构造选项（默认 `true`）**：绘制矩形、多边形、文本标注时，坐标自动约束在图片边界内（原图像素坐标系，`[0, originalWidth] × [0, originalHeight]`），避免存储负值或超出原图尺寸的坐标
+- 约束作用于绘制入口：矩形起点/拖拽更新点、多边形起点/加点/临时点、文本放置点
+- 图片未加载（`originalWidth` / `originalHeight` 为 0）时自动跳过约束
+- 传 `clampToImageBounds: false` 可关闭，恢复旧行为
+
 ## [1.2.0] - 2026-08-12
 
 ### Added - 标注变更事件系统
