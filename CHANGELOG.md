@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-10-09
+
+### Added - 标注标题边缘自适应
+
+- **标题越界自动调整**：当标题按设定位置绘制会超出图片边界时，自动「翻转优先 + 贴边兜底」，保证标题始终位于图片内：
+  - `top` 上方空间不足时翻转到标注下方；`bottom` 下方不足时翻转到上方；`inside-top` 保持标注内部、不翻转
+  - 水平方向按 `align` 计算后自动贴左 / 右边界
+  - 标题尺寸大于图片时退化为贴边显示
+  - 图片未加载（`originalWidth` / `originalHeight` 为 0）时跳过约束，沿用原固定位置
+  - `offsetX` / `offsetY` 仍生效，仅在越界时被修正
+- 抽离纯函数 `computeTitleBox`，**画布渲染与导出复用同一套标题布局逻辑**，保证所见即所得，同时消除 `renderer.ts` 中重复的标题布局代码
+
+### Changed - 构建与工程配置
+
+- 拆分构建配置：新增 `tsconfig.build.json`（用于生成类型声明），`tsconfig.json` 专注开发与测试的类型检查（`types: ["jest","node"]`，纳入 `__tests__`）
+- `build:types` 脚本改用 `tsc -p tsconfig.build.json --emitDeclarationOnly`
+- ESLint 对 `__tests__/**` 放行 `no-explicit-any`（测试访问私有成员的常规做法）
+- 清理源码中未使用的参数（`events.ts` 的 `handleClick`、`renderer.ts` 的 `forEach` 索引）
+
+### Tests
+
+- 大幅补充测试覆盖：光标交互、滚轮缩放与视图拖拽、控制点缩放、双击与键盘、渲染策略、标题编辑流程
+- 新增共享测试工具 `__tests__/helpers.ts`（事件派发、Drawer + 图片创建、标注直插）
+- 新增 `computeTitleBox` 单元测试及画布 / 导出的标题边缘场景集成测试
+
 ## [1.3.0] - 2026-08-13
 
 ### Added - 图片边界约束（clamp）

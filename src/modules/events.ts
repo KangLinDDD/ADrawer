@@ -840,7 +840,7 @@ export class EventHandler {
    * 处理鼠标单击（用于多边形绘制；加点已收敛到 mousedown 通道，
    * 此处仅保留防误触发的守卫与 justDeselected 消费）
    */
-  handleClick(e: MouseEvent): void {
+  handleClick(_e: MouseEvent): void {
     const drawType = this.getDrawType()
     if (!this.getBgImage() || drawType !== "polygon" || 
         this.isDragging || this.annotationManager.isMovingAnnotation || 

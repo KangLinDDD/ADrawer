@@ -4,15 +4,12 @@
  */
 
 import Drawer, { 
-  Shape, 
   Point, 
   Rect, 
   Polygon, 
   TextAnnotation, 
   Operate, 
   DrawerOptions,
-  DrawType,
-  LineStyle,
   VertexStyle,
   TextStyle,
   TextInputStyle,

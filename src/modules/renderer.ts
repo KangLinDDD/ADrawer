@@ -13,6 +13,8 @@ import type { ShapeRenderStrategy } from './renderers/shape-renderer'
 import { RectRenderer } from './renderers/rect-renderer'
 import { PolygonRenderer } from './renderers/polygon-renderer'
 import { drawTextAnnotations } from './renderers/text-renderer'
+import { computeTitleBox, UNBOUNDED_TITLE_BOUNDS } from './renderers/title-layout'
+import type { TitleBounds } from './renderers/title-layout'
 
 export class Renderer {
   /** 形状渲染策略表 */
@@ -67,7 +69,7 @@ export class Renderer {
    */
   private drawAnnotations(): void {
     // 绘制已完成标注 - 每个标注始终使用自己的样式
-    this.annotationManager.recordList.forEach((item, index) => {
+    this.annotationManager.recordList.forEach((item) => {
       // 获取标注保存的样式
       const style = this.annotationManager.getAnnotationStyle(item)
 
@@ -164,47 +166,29 @@ export class Renderer {
     const strategy = annotation.type === "rect" ? this.shapeRenderers.rect : this.shapeRenderers.polygon
     const anchor = strategy.getTitleAnchor(annotation, this.viewport)
     if (!anchor) { this.ctx.restore(); return }
-    const refX = anchor.x
-    const refY = anchor.y
-    const refW = anchor.width
-    const refH = anchor.height
 
     const bgW = textWidth + paddingX * 2
     const bgH = textHeight + paddingY * 2
 
-    // 根据 vertical 计算 bgY
-    const vertical = titlePos.vertical || 'top'
-    const offsetX = titlePos.offsetX || 0
-    const offsetY = titlePos.offsetY || 0
-    let bgY: number
-    switch (vertical) {
-      case 'bottom':
-        bgY = refY + refH + 4 + offsetY
-        break
-      case 'inside-top':
-        bgY = refY + 4 + offsetY
-        break
-      case 'top':
-      default:
-        bgY = refY - bgH - 4 + offsetY
-        break
-    }
-
-    // 根据 align 计算 bgX
-    const align = titlePos.align || 'center'
-    let bgX: number
-    switch (align) {
-      case 'left':
-        bgX = refX + offsetX
-        break
-      case 'right':
-        bgX = refX + refW - bgW + offsetX
-        break
-      case 'center':
-      default:
-        bgX = refX + refW / 2 - bgW / 2 + offsetX
-        break
-    }
+    // 图片边界自适应：图片尺寸有效时约束标题在图片矩形内，否则沿用固定位置
+    const imageW = this.viewport.originalWidth
+    const imageH = this.viewport.originalHeight
+    const bounds: TitleBounds =
+      imageW > 0 && imageH > 0
+        ? {
+            minX: this.viewport.offset.x,
+            minY: this.viewport.offset.y,
+            maxX: this.viewport.offset.x + imageW * this.viewport.scale,
+            maxY: this.viewport.offset.y + imageH * this.viewport.scale
+          }
+        : UNBOUNDED_TITLE_BOUNDS
+    const { x: bgX, y: bgY } = computeTitleBox({
+      anchor,
+      boxWidth: bgW,
+      boxHeight: bgH,
+      position: titlePos,
+      bounds
+    })
 
     // 绘制背景
     this.ctx.fillStyle = bgColor
@@ -314,31 +298,22 @@ export class Renderer {
       const strategy = item.type === "rect" ? this.shapeRenderers.rect : this.shapeRenderers.polygon
       const anchor = strategy.getTitleAnchor(item)
       if (!anchor) return
-      const refX = anchor.x
-      const refY = anchor.y
-      const refW = anchor.width
-      const refH = anchor.height
 
       const bgW = textWidth + paddingX * 2
       const bgH = textHeight + paddingY * 2
 
-      const vertical = titlePos.vertical || 'top'
-      const offsetX = titlePos.offsetX || 0
-      const offsetY = titlePos.offsetY || 0
-      let bgY: number
-      switch (vertical) {
-        case 'bottom': bgY = refY + refH + 4 + offsetY; break
-        case 'inside-top': bgY = refY + 4 + offsetY; break
-        default: bgY = refY - bgH - 4 + offsetY; break
-      }
-
-      const align = titlePos.align || 'center'
-      let bgX: number
-      switch (align) {
-        case 'left': bgX = refX + offsetX; break
-        case 'right': bgX = refX + refW - bgW + offsetX; break
-        default: bgX = refX + refW / 2 - bgW / 2 + offsetX; break
-      }
+      // 图片边界自适应：尺寸有效时约束标题在图片矩形内，否则沿用固定位置
+      const bounds: TitleBounds =
+        originalWidth > 0 && originalHeight > 0
+          ? { minX: 0, minY: 0, maxX: originalWidth, maxY: originalHeight }
+          : UNBOUNDED_TITLE_BOUNDS
+      const { x: bgX, y: bgY } = computeTitleBox({
+        anchor,
+        boxWidth: bgW,
+        boxHeight: bgH,
+        position: titlePos,
+        bounds
+      })
 
       ctx.fillStyle = bgColor
       if ((ctx as unknown as { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect) {

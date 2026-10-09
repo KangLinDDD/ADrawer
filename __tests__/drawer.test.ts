@@ -1,11 +1,10 @@
 import Drawer, { 
-  Shape, 
   Point, 
   Rect, 
   Polygon, 
   TextAnnotation, 
-  Operate, 
-  DrawerOptions 
+  isPointInRect, 
+  isPointInPolygon 
 } from '../src/index';
 
 describe('Drawer', () => {
@@ -358,9 +357,6 @@ describe('Annotation Selection and Movement', () => {
   it('should detect point in rect', () => {
     const rect: Rect = { start: { x: 100, y: 100 }, width: 100, height: 100 };
     
-    // 使用工具函数测试
-    const { isPointInRect } = require('../src/modules/utils');
-    
     expect(isPointInRect({ x: 150, y: 150 }, rect)).toBe(true); // 内部
     expect(isPointInRect({ x: 50, y: 50 }, rect)).toBe(false); // 外部
     expect(isPointInRect({ x: 100, y: 100 }, rect)).toBe(true); // 边界上
@@ -376,8 +372,6 @@ describe('Annotation Selection and Movement', () => {
     ];
 
     // 使用工具函数测试
-    const { isPointInPolygon } = require('../src/modules/utils');
-
     expect(isPointInPolygon({ x: 150, y: 150 }, polygon)).toBe(true); // 内部
     expect(isPointInPolygon({ x: 50, y: 50 }, polygon)).toBe(false); // 外部
   });
@@ -385,9 +379,6 @@ describe('Annotation Selection and Movement', () => {
   it('should handle negative rect dimensions', () => {
     // 从右下往左上画的矩形
     const rect: Rect = { start: { x: 200, y: 200 }, width: -100, height: -100 };
-    
-    // 使用工具函数测试
-    const { isPointInRect } = require('../src/modules/utils');
     
     expect(isPointInRect({ x: 150, y: 150 }, rect)).toBe(true); // 内部
     expect(isPointInRect({ x: 250, y: 250 }, rect)).toBe(false); // 外部

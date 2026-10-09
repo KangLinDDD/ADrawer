@@ -89,7 +89,7 @@ describe('锁定选中（lock）交互', () => {
   })
 
   it('锁定选中后程序化移动仍生效', async () => {
-    const { drawer, canvas, container } = await setupRect()
+    const { drawer, container } = await setupRect()
     track(drawer, container)
 
     lockSelect(drawer, 0)
