@@ -13,8 +13,7 @@ import type { ShapeRenderStrategy } from './renderers/shape-renderer'
 import { RectRenderer } from './renderers/rect-renderer'
 import { PolygonRenderer } from './renderers/polygon-renderer'
 import { drawTextAnnotations } from './renderers/text-renderer'
-import { computeTitleBox, UNBOUNDED_TITLE_BOUNDS } from './renderers/title-layout'
-import type { TitleBounds } from './renderers/title-layout'
+import { computeTitleBox } from './renderers/title-layout'
 
 export class Renderer {
   /** 形状渲染策略表 */
@@ -170,24 +169,12 @@ export class Renderer {
     const bgW = textWidth + paddingX * 2
     const bgH = textHeight + paddingY * 2
 
-    // 图片边界自适应：图片尺寸有效时约束标题在图片矩形内，否则沿用固定位置
-    const imageW = this.viewport.originalWidth
-    const imageH = this.viewport.originalHeight
-    const bounds: TitleBounds =
-      imageW > 0 && imageH > 0
-        ? {
-            minX: this.viewport.offset.x,
-            minY: this.viewport.offset.y,
-            maxX: this.viewport.offset.x + imageW * this.viewport.scale,
-            maxY: this.viewport.offset.y + imageH * this.viewport.scale
-          }
-        : UNBOUNDED_TITLE_BOUNDS
+    // 固定位置绘制：位置已在设置标题时按图片初始尺寸决定并写回，此处不再按视口边界重算
     const { x: bgX, y: bgY } = computeTitleBox({
       anchor,
       boxWidth: bgW,
       boxHeight: bgH,
-      position: titlePos,
-      bounds
+      position: titlePos
     })
 
     // 绘制背景
@@ -302,17 +289,12 @@ export class Renderer {
       const bgW = textWidth + paddingX * 2
       const bgH = textHeight + paddingY * 2
 
-      // 图片边界自适应：尺寸有效时约束标题在图片矩形内，否则沿用固定位置
-      const bounds: TitleBounds =
-        originalWidth > 0 && originalHeight > 0
-          ? { minX: 0, minY: 0, maxX: originalWidth, maxY: originalHeight }
-          : UNBOUNDED_TITLE_BOUNDS
+      // 固定位置绘制：位置已在设置标题时按图片初始尺寸决定并写回，此处不再按边界重算
       const { x: bgX, y: bgY } = computeTitleBox({
         anchor,
         boxWidth: bgW,
         boxHeight: bgH,
-        position: titlePos,
-        bounds
+        position: titlePos
       })
 
       ctx.fillStyle = bgColor

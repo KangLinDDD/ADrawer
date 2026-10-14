@@ -8,6 +8,7 @@ import type { Operate, Rect, Polygon, AnnotationStyle, SelectionStyle, VertexSty
 import type { ViewportManager } from '../viewport'
 import type { AnnotationStore } from '../annotation-store'
 import type { ShapeRenderStrategy, TitleAnchor } from './shape-renderer'
+import { getTitleAnchor as computeTitleAnchor } from './title-layout'
 
 export class PolygonRenderer implements ShapeRenderStrategy {
   /**
@@ -179,23 +180,10 @@ export class PolygonRenderer implements ShapeRenderStrategy {
   }
 
   /**
-   * 标题锚定框（原 drawAnnotationTitle / drawForExport 标题段的 polygon 分支：顶点包围盒）
-   * 空多边形返回 null（原行为：画布路径 restore+return，导出路径跳过该标注）
+   * 标题锚定框（委托共享 getTitleAnchor：顶点包围盒，空多边形返回 null）
    */
   getTitleAnchor(record: Operate<Rect | Polygon>, viewport?: ViewportManager): TitleAnchor | null {
-    const polygon = record.data as Polygon[]
-    if (polygon.length === 0) return null
-
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-    polygon.forEach(p => {
-      const px = viewport ? viewport.offset.x + p.point.x * viewport.scale : p.point.x
-      const py = viewport ? viewport.offset.y + p.point.y * viewport.scale : p.point.y
-      if (px < minX) minX = px
-      if (py < minY) minY = py
-      if (px > maxX) maxX = px
-      if (py > maxY) maxY = py
-    })
-    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+    return computeTitleAnchor(record, viewport)
   }
 
   /**

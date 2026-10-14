@@ -163,6 +163,12 @@ export class Drawer {
       () => this.render(),
       (event, payload) => this.emitter.emit(event, payload)
     )
+
+    // 注入标题文字测量能力（设置标题时用于水平边缘自动判断）
+    this.annotationManager.measureTitleWidth = (text: string, font: string) => {
+      this.ctx.font = font
+      return this.ctx.measureText(text).width
+    }
     
     // 设置颜色配置
     if (annotationColor) {
@@ -296,6 +302,8 @@ export class Drawer {
       this.bgImage = img
       this.viewport.setOriginalSize(img.width, img.height)
       this.viewport.calculateInitialView()
+      // 图片加载前设置的标题，此时补做一次边缘判断（仅未显式设置位置的）
+      this.annotationManager.adjustTitlePositions()
       this.render()
     }
   }

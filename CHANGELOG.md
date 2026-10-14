@@ -5,17 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-10-14
+
+### Fixed - 移动 / 缩放已有标注时的边界约束
+
+- **补齐 clamp 覆盖范围**：`clampToImageBounds` 此前只在「绘制入口」生效，已有标注仍可被拖到/缩到图片外；现在覆盖：
+  - `moveSelectedAnnotation`（鼠标拖动与 API 调用）：按**整个形状**夹回图片内
+    - 矩形：先把尺寸限制到不超过图片，再把左上角夹到 `[0, w-width] × [0, h-height]`
+    - 多边形：按包围盒整体平移；比图片还大时贴左上角
+  - `resizeRect`：鼠标点先经 `clampToImageBounds` 再参与计算
+  - `resizePolygon`：顶点位置同样先 clamp
+- 完全在图内时**不做任何改动**（保留调用方原有坐标表示，例如负宽高）
+- 继续遵循 `clampToImageBounds` 构造选项（`false` 时保持旧行为）与「图片未加载则跳过」的既有约定
+
+### Fixed - 发布产物的类型声明
+
+- `prepublishOnly` 原先为 `build && build:types && rm -rf dist/modules dist/*.map`：
+  `rollup -c` 产出的 `dist/index.d.ts` 是**自包含**的，而 `build:types`（tsc）会把它覆盖成引用
+  `./modules/types` 的版本，紧接着 `rm -rf dist/modules` 又删掉被引用的文件，
+  导致**已发布包的 `index.d.ts` 引用不存在的模块**，调用方拿到的 `DrawerOptions` 实际未解析
+  （在 `skipLibCheck: true` 下不会报错，但类型检查与补全全失效）
+- 现改为 `npm run build && rm -rf dist/*.map`
+
 ## [1.3.1] - 2026-10-09
 
-### Added - 标注标题边缘自适应
+### Added - 标注标题设置时边缘自适应
 
-- **标题越界自动调整**：当标题按设定位置绘制会超出图片边界时，自动「翻转优先 + 贴边兜底」，保证标题始终位于图片内：
-  - `top` 上方空间不足时翻转到标注下方；`bottom` 下方不足时翻转到上方；`inside-top` 保持标注内部、不翻转
-  - 水平方向按 `align` 计算后自动贴左 / 右边界
-  - 标题尺寸大于图片时退化为贴边显示
-  - 图片未加载（`originalWidth` / `originalHeight` 为 0）时跳过约束，沿用原固定位置
-  - `offsetX` / `offsetY` 仍生效，仅在越界时被修正
-- 抽离纯函数 `computeTitleBox`，**画布渲染与导出复用同一套标题布局逻辑**，保证所见即所得，同时消除 `renderer.ts` 中重复的标题布局代码
+- **设置标题时按图片初始尺寸自动判断一次**：调用 `setAnnotationTitle`（API）或双击编辑完成时，若标题会超出图片边界，自动调整并写回该标注的标题位置：
+  - 垂直：`top` 上方放不下翻转为 `bottom`，`bottom` 下方放不下翻转为 `top`；`inside-top` 保持标注内部、不翻转
+  - 水平：按 `align` 计算后自动贴左 / 右边界，通过 `offsetX` 记录补偿（保留对齐方式）
+  - `offsetX` / `offsetY` 作为基准参与计算
+  - 图片未加载（`originalWidth` / `originalHeight` 为 0）时先跳过，待图片加载完成后再补做一次判断；空多边形跳过
+- **显式设置优先**：通过 `setAnnotationTitlePosition` 设置过位置的标注不参与自动判断，重新设置标题也不会被覆盖
+- **渲染按存储位置固定绘制**：缩放、拖动不再重算标题位置
+- 抽离纯函数 `computeTitleLayout` / `computeTitleBox` / `getTitleAnchor`，**画布渲染与导出复用同一套标题布局逻辑**，同时消除 `renderer.ts` 与渲染策略中重复的锚点代码
 
 ### Changed - 构建与工程配置
 
@@ -28,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 大幅补充测试覆盖：光标交互、滚轮缩放与视图拖拽、控制点缩放、双击与键盘、渲染策略、标题编辑流程
 - 新增共享测试工具 `__tests__/helpers.ts`（事件派发、Drawer + 图片创建、标注直插）
-- 新增 `computeTitleBox` 单元测试及画布 / 导出的标题边缘场景集成测试
+- 新增 `computeTitleLayout` / `computeTitleBox` / `getTitleAnchor` 单元测试，以及「设置标题写回位置」的 API / UI 集成测试
 
 ## [1.3.0] - 2026-08-13
 

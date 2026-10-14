@@ -7,6 +7,7 @@ import type { Operate, Rect, Polygon, AnnotationStyle, SelectionStyle } from '..
 import type { ViewportManager } from '../viewport'
 import type { AnnotationStore } from '../annotation-store'
 import type { ShapeRenderStrategy, TitleAnchor } from './shape-renderer'
+import { getTitleAnchor as computeTitleAnchor } from './title-layout'
 
 export class RectRenderer implements ShapeRenderStrategy {
   /**
@@ -101,18 +102,9 @@ export class RectRenderer implements ShapeRenderStrategy {
   }
 
   /**
-   * 标题锚定框（原 drawAnnotationTitle / drawForExport 标题段的 rect 分支）
+   * 标题锚定框（委托共享 getTitleAnchor：矩形取 start/width/height）
    */
   getTitleAnchor(record: Operate<Rect | Polygon>, viewport?: ViewportManager): TitleAnchor | null {
-    const rect = record.data[0] as Rect
-    if (viewport) {
-      return {
-        x: viewport.offset.x + rect.start.x * viewport.scale,
-        y: viewport.offset.y + rect.start.y * viewport.scale,
-        width: rect.width * viewport.scale,
-        height: rect.height * viewport.scale
-      }
-    }
-    return { x: rect.start.x, y: rect.start.y, width: rect.width, height: rect.height }
+    return computeTitleAnchor(record, viewport)
   }
 }

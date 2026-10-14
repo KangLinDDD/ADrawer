@@ -89,6 +89,8 @@ export class AnnotationManager extends AnnotationStore {
     if (!annotation) return false
 
     this.strategyOf(annotation.type as 'rect' | 'polygon').move(annotation, dx, dy)
+    // move() 只做坐标平移、没有边界判断，这里把整个标注夹回图片内
+    this.clampRecordToImageBounds(annotation)
     return true
   }
 
@@ -124,7 +126,9 @@ export class AnnotationManager extends AnnotationStore {
     }
 
     const annotation = this.recordList[this.selectedAnnotation.index]
-    const newHandleIndex = this.strategyOf('rect').resize(annotation, this.activeHandle.index, currentPoint, this.originalRect)
+    // 鼠标可能拖到图外：先把点夹到图片边界，避免把矩形缩出边界
+    const clampedPoint = this.clampToImageBounds(currentPoint)
+    const newHandleIndex = this.strategyOf('rect').resize(annotation, this.activeHandle.index, clampedPoint, this.originalRect)
     if (typeof newHandleIndex === 'number') {
       this.activeHandle.index = newHandleIndex
     }
@@ -148,7 +152,12 @@ export class AnnotationManager extends AnnotationStore {
       return false
     }
 
-    this.strategyOf('polygon').resize(annotation, vertexIndex, currentPoint, this.originalPolygon ?? [])
+    this.strategyOf('polygon').resize(
+      annotation,
+      vertexIndex,
+      this.clampToImageBounds(currentPoint),
+      this.originalPolygon ?? []
+    )
     return true
   }
 

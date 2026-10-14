@@ -308,4 +308,145 @@ describe('AnnotationManager 图片边界约束 (clamp)', () => {
       expect(am.drawStartPoint).toEqual({ x: 0, y: 0 })
     })
   })
+
+  describe('已有标注的移动 / 缩放 clamp（clampRecordToImageBounds）', () => {
+    const pushRect = (
+      manager: AnnotationManager,
+      start = { x: 100, y: 100 },
+      width = 100,
+      height = 100
+    ) => {
+      manager.recordList.push({
+        type: 'rect',
+        data: [{ start: { ...start }, width, height }],
+        status: 'fullfilled'
+      })
+    }
+
+    const pushPolygon = (manager: AnnotationManager, points: Array<[number, number]>) => {
+      manager.recordList.push({
+        type: 'polygon',
+        data: points.map(([x, y]) => ({ point: { x, y } })),
+        status: 'fullfilled'
+      })
+    }
+
+    const rectOf = (manager: AnnotationManager) => manager.recordList[0].data[0] as Rect
+
+    it('矩形向右下拖出边界时，整体被夹回图内', () => {
+      const { manager } = createManager()
+      pushRect(manager, { x: 700, y: 500 })
+      manager.selectAnnotation(0)
+
+      manager.moveSelectedAnnotation(500, 500)
+
+      // 800-100=700 / 600-100=500：正好贴住右下边界，不会被拖出去
+      expect(rectOf(manager).start).toEqual({ x: 700, y: 500 })
+    })
+
+    it('矩形向左上拖出边界时，整体被夹回 (0,0)', () => {
+      const { manager } = createManager()
+      pushRect(manager, { x: 50, y: 50 })
+      manager.selectAnnotation(0)
+
+      manager.moveSelectedAnnotation(-500, -500)
+
+      expect(rectOf(manager).start).toEqual({ x: 0, y: 0 })
+    })
+
+    it('矩形完全在图内时移动结果不变（只夹越界，不做多余改写）', () => {
+      const { manager } = createManager()
+      pushRect(manager, { x: 100, y: 100 })
+      manager.selectAnnotation(0)
+
+      manager.moveSelectedAnnotation(10, 20)
+
+      expect(rectOf(manager).start).toEqual({ x: 110, y: 120 })
+      expect(rectOf(manager).width).toBe(100)
+      expect(rectOf(manager).height).toBe(100)
+    })
+
+    it('clampEnabled = false 时矩形可以拖到图外（保持旧行为）', () => {
+      const { manager } = createManager()
+      manager.clampEnabled = false
+      pushRect(manager, { x: 700, y: 500 })
+      manager.selectAnnotation(0)
+
+      manager.moveSelectedAnnotation(500, 500)
+
+      expect(rectOf(manager).start).toEqual({ x: 1200, y: 1000 })
+    })
+
+    it('图片未加载（未设置原图尺寸）时不夹', () => {
+      const { manager } = createManager(false)
+      pushRect(manager, { x: 700, y: 500 })
+      manager.selectAnnotation(0)
+
+      manager.moveSelectedAnnotation(500, 500)
+
+      expect(rectOf(manager).start).toEqual({ x: 1200, y: 1000 })
+    })
+
+    it('比图片还大的矩形被收敛到图片尺寸并贴左上角', () => {
+      const { manager } = createManager()
+      pushRect(manager, { x: -200, y: -200 }, 2000, 2000)
+      manager.selectAnnotation(0)
+
+      manager.moveSelectedAnnotation(0, 0)
+
+      expect(rectOf(manager).start).toEqual({ x: 0, y: 0 })
+      expect(rectOf(manager).width).toBe(IMG_W)
+      expect(rectOf(manager).height).toBe(IMG_H)
+    })
+
+    it('多边形整体拖出边界时按包围盒平移回图内', () => {
+      const { manager } = createManager()
+      pushPolygon(manager, [
+        [700, 500],
+        [900, 500],
+        [900, 700]
+      ])
+      manager.selectAnnotation(0)
+
+      manager.moveSelectedAnnotation(200, 200)
+
+      const points = (manager.recordList[0].data as Polygon[]).map((p) => p.point)
+      // 最右 1100 → 夹回 800；最下 900 → 夹回 600，整体平移 (-300, -300)
+      expect(points).toEqual([
+        { x: 600, y: 400 },
+        { x: 800, y: 400 },
+        { x: 800, y: 600 }
+      ])
+    })
+
+    it('矩形缩放时鼠标拖到图外，结果仍不越界', () => {
+      const { manager } = createManager()
+      pushRect(manager, { x: 100, y: 100 }, 200, 200)
+      manager.selectAnnotation(0)
+      manager.startResizing({ type: 'rect-corner', index: 3 }, { x: 300, y: 300 })
+
+      // 右下角拖到远超图片的位置
+      manager.resizeRect({ x: 5000, y: 5000 })
+
+      const rect = rectOf(manager)
+      expect(rect.start.x + rect.width).toBeLessThanOrEqual(IMG_W)
+      expect(rect.start.y + rect.height).toBeLessThanOrEqual(IMG_H)
+    })
+
+    it('多边形顶点缩放到图外时被夹回边界', () => {
+      const { manager } = createManager()
+      pushPolygon(manager, [
+        [100, 100],
+        [200, 100],
+        [200, 200]
+      ])
+      manager.selectAnnotation(0)
+      manager.startResizing({ type: 'polygon-vertex', index: 0 }, { x: 100, y: 100 })
+
+      manager.resizePolygon({ x: -500, y: -500 })
+
+      const first = (manager.recordList[0].data as Polygon[])[0].point
+      expect(first).toEqual({ x: 0, y: 0 })
+    })
+  })
 })

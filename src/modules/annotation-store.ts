@@ -24,6 +24,7 @@ import type {
 } from './types'
 import { deepClone, generateId } from './utils'
 import type { ViewportManager } from './viewport'
+import { getTitleAnchor, computeTitleLayout } from './renderers/title-layout'
 import type { ShapeStrategy, StrategyStore } from './shapes/shape-strategy'
 import { clampPoint, notifyShapeChange } from './shapes/shared'
 import { defaultShapeRegistry } from './registry'
@@ -109,6 +110,9 @@ export class AnnotationStore implements StrategyStore {
   // 是否启用标题功能（默认 false，需在 DrawerOptions 中显式开启）
   public enableTitle = false
 
+  // 标题文字宽度测量函数（由 Drawer 用 canvas ctx 注入；未注入时设置标题只做垂直边缘判断）
+  public measureTitleWidth?: (text: string, font: string) => number
+
   // 是否将绘制坐标约束在图片边界内（默认 true，由 DrawerOptions.clampToImageBounds 控制）
   public clampEnabled = true
 
@@ -141,6 +145,75 @@ export class AnnotationStore implements StrategyStore {
    */
   protected clampToImageBounds(point: Point): Point {
     return clampPoint(this.viewport, point, this.clampEnabled)
+  }
+
+  /**
+   * 把**整个标注**约束到图片边界内 —— 供「移动 / 缩放已有标注」使用。
+   *
+   * 为什么需要单独一个：`strategy.move()` 只是把坐标整体加 dx/dy，`resize()` 直接用鼠标点，
+   * 两者原先都没有边界判断，所以已有标注能被拖到/缩到图外；
+   * 而 `clampToImageBounds(point)` 只作用于绘制入口（startRectDrawing / updateRectDrawing 等）。
+   *
+   * - `clampEnabled` 为 false 或图片未加载时原样返回
+   * - 矩形：按包围盒先把尺寸限制到不超过图片，再把左上角夹到 `[0, w-width] × [0, h-height]`
+   * - 多边形：按包围盒整体平移；比图片还大时贴左上角
+   * - **完全在图内时不做任何改动**（保留调用方原有的坐标表示，例如负宽高）
+   */
+  protected clampRecordToImageBounds(record: Operate<Rect | Polygon>): void {
+    if (!this.clampEnabled) return
+    const { originalWidth: w, originalHeight: h } = this.viewport
+    if (!w || !h) return
+
+    if (record.type === 'rect') {
+      const rect = record.data[0] as Rect
+      if (!rect) return
+
+      const rawX1 = Math.min(rect.start.x, rect.start.x + rect.width)
+      const rawX2 = Math.max(rect.start.x, rect.start.x + rect.width)
+      const rawY1 = Math.min(rect.start.y, rect.start.y + rect.height)
+      const rawY2 = Math.max(rect.start.y, rect.start.y + rect.height)
+
+      // 已完全在图内：不改动，避免无谓地改写存储形态（如负宽高）
+      if (rawX1 >= 0 && rawY1 >= 0 && rawX2 <= w && rawY2 <= h) return
+
+      const width = Math.min(rawX2 - rawX1, w)
+      const height = Math.min(rawY2 - rawY1, h)
+      rect.start.x = Math.max(0, Math.min(rawX1, w - width))
+      rect.start.y = Math.max(0, Math.min(rawY1, h - height))
+      rect.width = width
+      rect.height = height
+      return
+    }
+
+    const points = record.data as Polygon[]
+    if (!points || points.length === 0) return
+
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const p of points) {
+      minX = Math.min(minX, p.point.x)
+      maxX = Math.max(maxX, p.point.x)
+      minY = Math.min(minY, p.point.y)
+      maxY = Math.max(maxY, p.point.y)
+    }
+
+    let dx = 0
+    let dy = 0
+    if (maxX - minX > w) dx = -minX
+    else if (minX < 0) dx = -minX
+    else if (maxX > w) dx = w - maxX
+
+    if (maxY - minY > h) dy = -minY
+    else if (minY < 0) dy = -minY
+    else if (maxY > h) dy = h - maxY
+
+    if (dx === 0 && dy === 0) return
+    for (const p of points) {
+      p.point.x += dx
+      p.point.y += dy
+    }
   }
 
   /**
@@ -524,7 +597,75 @@ export class AnnotationStore implements StrategyStore {
       annotation.style = this.getCurrentStyle()
     }
     annotation.style.titleStyle = { ...this.titleStyle }
-    annotation.style.titlePosition = { ...this.titlePosition }
+    // 显式设置过的位置不被全局快照覆盖
+    if (!annotation.style.titlePositionExplicit) {
+      annotation.style.titlePosition = { ...this.titlePosition }
+    }
+  }
+
+  /**
+   * 设置标题时按图片初始显示尺寸自动判断标题位置（翻转优先 + 贴边），并写回标注。
+   * 规则：显式设置过位置、图片未加载、空多边形时跳过。
+   */
+  private autoAdjustTitlePosition(annotation: Operate<Rect | Polygon>, title: string): void {
+    if (!title || annotation.style?.titlePositionExplicit) return
+
+    const { originalWidth, originalHeight, initialScale, scale } = this.viewport
+    if (originalWidth <= 0 || originalHeight <= 0) return
+
+    const anchorImg = getTitleAnchor(annotation)
+    if (!anchorImg) return
+
+    const s = initialScale > 0 ? initialScale : scale > 0 ? scale : 1
+    const anchor = {
+      x: anchorImg.x * s,
+      y: anchorImg.y * s,
+      width: anchorImg.width * s,
+      height: anchorImg.height * s
+    }
+
+    const style = this.getEffectiveTitleStyle(annotation)
+    const font = style.font || '12px Arial'
+    const fontSizeMatch = font.match(/(\d+)px/)
+    const fontSize = fontSizeMatch ? parseInt(fontSizeMatch[1]) : 12
+    const boxHeight = fontSize + (style.paddingY ?? 3) * 2
+
+    const measure = this.measureTitleWidth
+    const bounds = measure
+      ? { minX: 0, minY: 0, maxX: originalWidth * s, maxY: originalHeight * s }
+      : {
+          minX: Number.NEGATIVE_INFINITY,
+          minY: 0,
+          maxX: Number.POSITIVE_INFINITY,
+          maxY: originalHeight * s
+        }
+    const boxWidth = measure ? measure(title, font) + (style.paddingX ?? 6) * 2 : 0
+
+    const base = { ...this.titlePosition }
+    const layout = computeTitleLayout({ anchor, boxWidth, boxHeight, position: base, bounds })
+
+    if (!annotation.style) {
+      annotation.style = this.getCurrentStyle()
+    }
+    annotation.style.titlePosition = {
+      ...base,
+      vertical: layout.vertical,
+      align: layout.align,
+      offsetX: layout.offsetX
+    }
+  }
+
+  /**
+   * 图片加载完成后，对所有「未显式设置位置」的标题补做一次边缘判断。
+   * 用于图片尚未加载时就通过 API 设置了标题的场景。
+   */
+  public adjustTitlePositions(): void {
+    if (this.viewport.originalWidth <= 0 || this.viewport.originalHeight <= 0) return
+    this.recordList.forEach((annotation) => {
+      if (annotation.title && !annotation.style?.titlePositionExplicit) {
+        this.autoAdjustTitlePosition(annotation, annotation.title)
+      }
+    })
   }
 
   /**
@@ -563,6 +704,8 @@ export class AnnotationStore implements StrategyStore {
       ...(annotation.style.titlePosition || this.titlePosition),
       ...position
     }
+    // 标记为显式设置，后续设置标题时的自动边缘判断不再覆盖
+    annotation.style.titlePositionExplicit = true
     this.notifyUpdate(index)
     return true
   }
@@ -624,6 +767,8 @@ export class AnnotationStore implements StrategyStore {
     // 设置非空标题时，将当前全局样式快照存入标注，保证后续全局修改不影响已有标题
     if (title) {
       this.captureTitleStyleSnapshot(annotation)
+      // 按图片初始尺寸自动判断是否靠边，并写回位置
+      this.autoAdjustTitlePosition(annotation, title)
     }
     this.notifyUpdate(index)
     return true
@@ -700,6 +845,8 @@ export class AnnotationStore implements StrategyStore {
       // 设置非空标题时，将当前全局样式快照存入标注
       if (newTitle) {
         this.captureTitleStyleSnapshot(annotation)
+        // 按图片初始尺寸自动判断是否靠边，并写回位置
+        this.autoAdjustTitlePosition(annotation, newTitle)
       }
       this.notifyUpdate(index)
       // 重新选中标注

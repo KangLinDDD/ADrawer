@@ -88,6 +88,8 @@ export type AnnotationStyle = {
   titleStyle?: TitleStyle
   /** 标注标题位置（覆盖全局默认） */
   titlePosition?: TitlePosition
+  /** 标题位置是否由用户显式设置（true 时不参与设置标题时的自动边缘判断） */
+  titlePositionExplicit?: boolean
 }
 
 /** 操作记录 */

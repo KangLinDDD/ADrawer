@@ -65,12 +65,7 @@ describe('renderer.ts 背景与标题绘制', () => {
     expect(getCtx().fillText).toHaveBeenCalledWith('标题A', expect.any(Number), expect.any(Number))
   })
 
-  it('标注贴图片上边缘时标题翻转回图片内（画布）', () => {
-    const vp = (drawer as any).viewport
-    vp.originalWidth = 200
-    vp.originalHeight = 200
-    vp.scale = 1
-    vp.offset = { x: 0, y: 0 }
+  it('标题按存储位置固定绘制，不随视口边界翻转（画布）', () => {
     ;(drawer as any).annotationManager.recordList.push({
       type: 'rect',
       data: [{ start: { x: 100, y: 2 }, width: 100, height: 50 }],
@@ -83,8 +78,8 @@ describe('renderer.ts 背景与标题绘制', () => {
     ;(drawer as any).render()
     const call = getCtx().fillText.mock.calls.find((c: any[]) => c[0] === 'A')
     expect(call).toBeTruthy()
-    // 上方不足 → 翻转到下方：bgY = 2 + 50 + 4 = 56；paddingY = 3 → fillText y = 59
-    expect(call![2]).toBe(59)
+    // 固定位置：bgY = 2 - 18 - 4 = -20；paddingY = 3 → fillText y = -17（不因越界翻转）
+    expect(call![2]).toBe(-17)
   })
 })
 
@@ -158,7 +153,7 @@ describe('renderer.ts 导出 drawForExport', () => {
     expect(getCtx().fillText).toHaveBeenCalledWith('标题A', expect.any(Number), expect.any(Number))
   })
 
-  it('标注贴图片上边缘时标题翻转回图片内（导出）', () => {
+  it('标题按存储位置固定绘制，不随导出边界翻转（导出）', () => {
     ;(drawer as any).annotationManager.recordList.push({
       type: 'rect',
       data: [{ start: { x: 100, y: 2 }, width: 100, height: 50 }],
@@ -171,7 +166,7 @@ describe('renderer.ts 导出 drawForExport', () => {
     renderer().drawForExport(getCtx(), img(), 200, 200)
     const call = getCtx().fillText.mock.calls.find((c: any[]) => c[0] === 'A')
     expect(call).toBeTruthy()
-    // bounds maxY = 200，上方不足 → 翻转到下方 bgY = 56；paddingY = 3 → 59
-    expect(call![2]).toBe(59)
+    // 固定位置：bgY = 2 - 18 - 4 = -20；paddingY = 3 → -17（不因越界翻转）
+    expect(call![2]).toBe(-17)
   })
 })
