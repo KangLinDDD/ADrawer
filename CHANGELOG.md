@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-10-14
+
+### Fixed - 拖拽 / 缩放后标题跑到图片外
+
+- **操作结束时补做标题边缘自适应**：标题按「标注锚点 + 存储的 `titlePosition`」绘制，且自 1.3.1 起
+  拖动/缩放过程中不再实时重算（避免标题乱跳）；因此把标注拖到或缩到贴边后，
+  标题会留在图片之外，且不会自行恢复。
+- 现在在 `finishMovingAnnotation()`（拖动与缩放**共同的结束钩子**）里，对当前标注补做一次
+  边缘自适应，把标题拉回图内：
+  - 拖动**过程**中仍不重算 —— 保持 1.3.1「拖动不乱跳」的手感，只在松手/结束时收敛
+  - 仅作用于**未显式设置位置**的标题（`autoAdjustTitlePosition` 内部已判断 `titlePositionExplicit`）
+  - 无标题、图片未加载时跳过
+- **拖拽/缩放结束时主动重绘**：事件层只在 `mousemove` 时重绘，`mouseup` 只 emit `update` 事件，
+  于是上面写回的标题位置要等到下一次 render（例如取消选中）才可见 —— 表现为
+  「松手后标题没回到图内，点了别处才跳回来」。现在在结束钩子里补一次 `renderCallback()`，
+  标题位置在松手当下即生效。
+
+### Tests
+
+- `__tests__/title-edge.test.ts` 新增 5 条：拖到顶部后标题翻转为 `bottom`、
+  拖动中途不重算、显式设置过位置不被改写、缩放到贴顶后同样被拉回、
+  **结束时主动重绘**（且未发生移动/缩放时不多余重绘）
+
 ## [1.3.2] - 2026-10-14
 
 ### Fixed - 移动 / 缩放已有标注时的边界约束

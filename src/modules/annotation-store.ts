@@ -491,7 +491,20 @@ export class AnnotationStore implements StrategyStore {
     this.originalPolygon = null
 
     if (wasMovingOrResizing && this.selectedAnnotation) {
+      // 拖拽/缩放结束后补做一次标题边缘自适应。
+      // 标题是按「标注锚点 + 存储的 titlePosition」绘制的，且自 1.3.1 起拖动过程中不再实时重算
+      // （避免标题随拖动乱跳）；因此把标注拖到/缩到贴边后，标题会留在图片外。
+      // 这里只在操作**结束**时拉回图内：最终态合法，拖动过程手感不变。
+      // autoAdjustTitlePosition 内部已跳过「无标题」「显式设置过位置」「图片未加载」的情况。
+      const annotation = this.recordList[this.selectedAnnotation.index]
+      if (annotation?.title) {
+        this.autoAdjustTitlePosition(annotation, annotation.title)
+      }
       this.notifyUpdate(this.selectedAnnotation.index)
+      // 拖拽结束时事件层**不会**再重绘（events.ts 只在 mousemove 里 render，mouseup 只 emit update），
+      // 所以上面写回的标题位置要等到下一次 render（例如取消选中）才可见 —— 表现为
+      // 「松手后标题没回到图内，点了别处才跳回来」。这里主动补一次重绘。
+      this.renderCallback?.()
     }
   }
 

@@ -1,4 +1,6 @@
 import Drawer from '../src/index'
+import { AnnotationManager } from '../src/modules/annotations'
+import { ViewportManager } from '../src/modules/viewport'
 import { createDrawerWithImage } from './helpers'
 
 const am = (d: Drawer) => (d as any).annotationManager
@@ -101,5 +103,106 @@ describe('设置标题时按初始图片尺寸自动判断位置', () => {
     await new Promise((r) => setTimeout(r, 10))
     // 图片加载后补做判断
     expect(am(drawer).getEffectiveTitlePosition(am(drawer).recordList[0]).vertical).toBe('bottom')
+  })
+
+  describe('拖拽 / 缩放结束后标题边缘自适应', () => {
+    /** 模拟一次完整拖拽：start → move → finish */
+    const dragBy = (drawer: Drawer, dx: number, dy: number) => {
+      const m = am(drawer)
+      drawer.selectAnnotation(0)
+      m.startMovingAnnotation(new MouseEvent('mousedown'))
+      m.moveSelectedAnnotation(dx, dy)
+      m.finishMovingAnnotation()
+    }
+
+    it('把带标题的标注拖到顶部后，标题 vertical 翻转为 bottom（回到图内）', async () => {
+      const { drawer, container } = await createDrawerWithImage('move-title-top', {
+        enableTitle: true,
+      })
+      track(drawer, container)
+      pushRectAt(drawer, { x: 100, y: 300 }, 100, 50)
+      drawer.setAnnotationTitle(0, 'A')
+      expect(am(drawer).getEffectiveTitlePosition(am(drawer).recordList[0]).vertical).toBe('top')
+
+      dragBy(drawer, 0, -298) // 移到 y=2，贴顶
+
+      expect(am(drawer).getEffectiveTitlePosition(am(drawer).recordList[0]).vertical).toBe('bottom')
+    })
+
+    it('拖动过程中不重算标题位置（保持“拖动不跳”的既有行为）', async () => {
+      const { drawer, container } = await createDrawerWithImage('move-title-midway', {
+        enableTitle: true,
+      })
+      track(drawer, container)
+      pushRectAt(drawer, { x: 100, y: 300 }, 100, 50)
+      drawer.setAnnotationTitle(0, 'A')
+
+      const m = am(drawer)
+      drawer.selectAnnotation(0)
+      m.startMovingAnnotation(new MouseEvent('mousedown'))
+      m.moveSelectedAnnotation(0, -298)
+
+      // 尚未 finish：标题仍保持 top
+      expect(m.getEffectiveTitlePosition(m.recordList[0]).vertical).toBe('top')
+
+      m.finishMovingAnnotation()
+      expect(m.getEffectiveTitlePosition(m.recordList[0]).vertical).toBe('bottom')
+    })
+
+    it('显式设置过标题位置的标注不被改写', async () => {
+      const { drawer, container } = await createDrawerWithImage('move-title-explicit', {
+        enableTitle: true,
+      })
+      track(drawer, container)
+      pushRectAt(drawer, { x: 100, y: 300 }, 100, 50)
+      drawer.setAnnotationTitle(0, 'A')
+      drawer.setAnnotationTitlePosition(0, { vertical: 'top', align: 'left' })
+
+      dragBy(drawer, 0, -298)
+
+      expect(am(drawer).getEffectiveTitlePosition(am(drawer).recordList[0]).vertical).toBe('top')
+    })
+
+    it('缩放到贴顶后标题同样被拉回图内', async () => {
+      const { drawer, container } = await createDrawerWithImage('resize-title-top', {
+        enableTitle: true,
+      })
+      track(drawer, container)
+      pushRectAt(drawer, { x: 100, y: 100 }, 100, 100)
+      drawer.setAnnotationTitle(0, 'A')
+      expect(am(drawer).getEffectiveTitlePosition(am(drawer).recordList[0]).vertical).toBe('top')
+
+      const m = am(drawer)
+      drawer.selectAnnotation(0)
+      // handle 0 = 左上角；把左上角拖到 y=0，使矩形贴顶
+      m.startResizing({ type: 'rect-corner', index: 0 }, { x: 100, y: 100 })
+      m.resizeRect({ x: 100, y: 0 })
+      m.finishMovingAnnotation()
+
+      expect(m.getEffectiveTitlePosition(m.recordList[0]).vertical).toBe('bottom')
+    })
+
+    it('拖拽/缩放结束时主动重绘（否则标题位置要等到下次 render 才可见）', () => {
+      const viewport = new ViewportManager()
+      viewport.setOriginalSize(800, 600)
+      const renderSpy = jest.fn()
+      const manager = new AnnotationManager(viewport, void 0, renderSpy, () => {})
+      manager.recordList.push({
+        type: 'rect',
+        data: [{ start: { x: 100, y: 100 }, width: 100, height: 100 }],
+        status: 'fullfilled',
+      })
+      manager.selectAnnotation(0)
+
+      // 未发生移动/缩放时不应有多余重绘
+      manager.finishMovingAnnotation()
+      expect(renderSpy).not.toHaveBeenCalled()
+
+      manager.startMovingAnnotation(new MouseEvent('mousedown'))
+      manager.moveSelectedAnnotation(0, 10)
+      manager.finishMovingAnnotation()
+
+      expect(renderSpy).toHaveBeenCalledTimes(1)
+    })
   })
 })
