@@ -52,6 +52,9 @@ export type TitleLayoutResult = {
 
 const DEFAULT_GAP = 4
 
+/** 标注与标题之间的默认间距（画布像素；导出时需按倍率换算） */
+export const DEFAULT_TITLE_GAP = DEFAULT_GAP
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }

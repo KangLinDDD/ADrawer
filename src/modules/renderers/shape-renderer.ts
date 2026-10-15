@@ -22,8 +22,11 @@ export interface ShapeRenderStrategy {
   drawInProgress(ctx: CanvasRenderingContext2D, viewport: ViewportManager, store: AnnotationStore): void
   /** 绘制选中高亮：半透明填充 + 虚线框；locked=true 时不画控制点 */
   drawSelection(ctx: CanvasRenderingContext2D, viewport: ViewportManager, record: Operate<Rect | Polygon>, selectionStyle: SelectionStyle, locked: boolean): void
-  /** 导出绘制（原始图像坐标系，无 viewport 变换） */
-  drawForExport(ctx: CanvasRenderingContext2D, record: Operate<Rect | Polygon>, style: AnnotationStyle): void
+  /**
+   * 导出绘制（原始图像坐标系，无 viewport 变换）
+   * @param pixelRatio 画布像素 → 原图像素倍率（1 / viewport.scale），缺省 1
+   */
+  drawForExport(ctx: CanvasRenderingContext2D, record: Operate<Rect | Polygon>, style: AnnotationStyle, pixelRatio?: number): void
   /** 标题锚定框；传 viewport 返回画布坐标，缺省返回原始图像坐标；无法锚定（如空多边形）返回 null */
   getTitleAnchor(record: Operate<Rect | Polygon>, viewport?: ViewportManager): TitleAnchor | null
 }

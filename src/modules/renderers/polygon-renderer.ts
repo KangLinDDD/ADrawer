@@ -9,6 +9,7 @@ import type { ViewportManager } from '../viewport'
 import type { AnnotationStore } from '../annotation-store'
 import type { ShapeRenderStrategy, TitleAnchor } from './shape-renderer'
 import { getTitleAnchor as computeTitleAnchor } from './title-layout'
+import { scaleStrokePx } from './export-scale'
 
 export class PolygonRenderer implements ShapeRenderStrategy {
   /**
@@ -153,7 +154,8 @@ export class PolygonRenderer implements ShapeRenderStrategy {
   drawForExport(
     ctx: CanvasRenderingContext2D,
     record: Operate<Rect | Polygon>,
-    style: AnnotationStyle
+    style: AnnotationStyle,
+    pixelRatio = 1
   ): void {
     if (record.status !== "fullfilled") return
 
@@ -170,10 +172,11 @@ export class PolygonRenderer implements ShapeRenderStrategy {
     ctx.lineTo(first.point.x, first.point.y)
     ctx.stroke()
 
-    // 绘制顶点标记 - 使用标注保存的颜色
+    // 绘制顶点标记 - 使用标注保存的颜色（半径是画布像素，导出时按倍率换算）
+    const vertexRadius = scaleStrokePx(4, pixelRatio)
     polygon.forEach((point) => {
       ctx.beginPath()
-      ctx.arc(point.point.x, point.point.y, 4, 0, Math.PI * 2)
+      ctx.arc(point.point.x, point.point.y, vertexRadius, 0, Math.PI * 2)
       ctx.fillStyle = style.strokeColor
       ctx.fill()
     })

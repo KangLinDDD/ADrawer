@@ -14,6 +14,8 @@ import { RectRenderer } from './renderers/rect-renderer'
 import { PolygonRenderer } from './renderers/polygon-renderer'
 import { drawTextAnnotations } from './renderers/text-renderer'
 import { computeTitleBox } from './renderers/title-layout'
+import { DEFAULT_TITLE_GAP } from './renderers/title-layout'
+import { parseFontSize, scaleFont, scalePx, scaleStrokePx } from './renderers/export-scale'
 
 export class Renderer {
   /** 形状渲染策略表 */
@@ -157,9 +159,7 @@ export class Renderer {
     const textMetrics = this.ctx.measureText(annotation.title)
     const textWidth = textMetrics.width
     // 从字体字符串中提取字号
-    const fontSizeMatch = font.match(/(\d+)px/)
-    const fontSize = fontSizeMatch ? parseInt(fontSizeMatch[1]) : 12
-    const textHeight = fontSize
+    const textHeight = parseFontSize(font)
 
     // 计算标注参考位置（画布坐标；非 rect 一律走 polygon 锚定，与原 else 分支一致）
     const strategy = annotation.type === "rect" ? this.shapeRenderers.rect : this.shapeRenderers.polygon
@@ -194,6 +194,19 @@ export class Renderer {
   }
 
   /**
+   * 交互画布（容器分辨率）→ 导出图（原始图像分辨率）的像素倍率。
+   *
+   * 导出图是当前视图的 1/scale 倍放大，而画布上的字号 / 内边距 / 圆角 / 线宽 /
+   * 顶点半径 / 标题间距与偏移都是按「画布像素」给定的常量；
+   * 若不在导出时同倍换算，导出图里的文字相对整张图会被缩小同样的倍数
+   * （4000px 原图里 14px 的字 → 页面缩到几百像素宽显示时只剩 1~3px，看起来像没画）。
+   */
+  private getExportPixelRatio(): number {
+    const scale = this.viewport.scale
+    return scale > 0 ? 1 / scale : 1
+  }
+
+  /**
    * 导出时绘制所有内容到指定上下文
    */
   drawForExport(
@@ -202,6 +215,9 @@ export class Renderer {
     originalWidth: number,
     originalHeight: number
   ): void {
+    // 画布像素 → 原图像素
+    const ratio = this.getExportPixelRatio()
+
     // 绘制背景图片
     ctx.drawImage(bgImage, 0, 0, originalWidth, originalHeight)
 
@@ -210,12 +226,12 @@ export class Renderer {
       // 获取标注保存的样式
       const style = this.annotationManager.getAnnotationStyle(item)
       ctx.strokeStyle = style.strokeColor
-      ctx.lineWidth = style.lineWidth
+      ctx.lineWidth = scaleStrokePx(style.lineWidth, ratio)
 
       if (item.type === "rect") {
-        this.shapeRenderers.rect.drawForExport(ctx, item, style)
+        this.shapeRenderers.rect.drawForExport(ctx, item, style, ratio)
       } else if (item.type === "polygon") {
-        this.shapeRenderers.polygon.drawForExport(ctx, item, style)
+        this.shapeRenderers.polygon.drawForExport(ctx, item, style, ratio)
       }
     })
 
@@ -230,7 +246,7 @@ export class Renderer {
         backgroundColor: globalStyle.backgroundColor
       }
 
-      ctx.font = textStyle.font
+      ctx.font = scaleFont(textStyle.font, ratio)
 
       // 测量文本以获取准确的高度信息
       const textMetrics = ctx.measureText(textData.text)
@@ -238,12 +254,13 @@ export class Renderer {
       const descent = textMetrics.actualBoundingBoxDescent || textData.height * 0.2
       const actualTextHeight = ascent + descent
 
-      // position 是背景框左上角
+      // position 是背景框左上角（图像坐标，无需换算）；宽高随字号与内边距一起放大
       const bgX = textData.position.x
       const bgY = textData.position.y
-      const bgWidth = textData.width + globalStyle.padding * 2
-      const bgHeight = actualTextHeight + globalStyle.padding * 2
-      const r = globalStyle.borderRadius
+      const padding = scalePx(globalStyle.padding, ratio)
+      const bgWidth = textMetrics.width + padding * 2
+      const bgHeight = actualTextHeight + padding * 2
+      const r = scalePx(globalStyle.borderRadius, ratio)
 
       // 绘制背景
       ctx.fillStyle = textStyle.backgroundColor
@@ -256,7 +273,7 @@ export class Renderer {
 
       // 绘制文本：基线在背景框内部
       ctx.fillStyle = textStyle.color
-      ctx.fillText(textData.text, textData.position.x + globalStyle.padding, textData.position.y + globalStyle.padding + ascent)
+      ctx.fillText(textData.text, bgX + padding, bgY + padding + ascent)
     })
 
     // 绘制标注标题（导出模式 - 仅在启用时）
@@ -267,19 +284,19 @@ export class Renderer {
       const titleStyle = this.annotationManager.getEffectiveTitleStyle(item)
       const titlePos = this.annotationManager.getEffectiveTitlePosition(item)
 
-      const font = titleStyle.font || '12px Arial'
       const color = titleStyle.color || '#FFFFFF'
       const bgColor = titleStyle.backgroundColor || 'rgba(0, 0, 0, 0.7)'
-      const paddingX = titleStyle.paddingX ?? 6
-      const paddingY = titleStyle.paddingY ?? 3
-      const borderRadius = titleStyle.borderRadius ?? 4
+      // 字号、内边距、圆角都按倍率放大（字号同时也决定标题框高度）
+      const font = scaleFont(titleStyle.font || '12px Arial', ratio)
+      const paddingX = scalePx(titleStyle.paddingX ?? 6, ratio)
+      const paddingY = scalePx(titleStyle.paddingY ?? 3, ratio)
+      const borderRadius = scalePx(titleStyle.borderRadius ?? 4, ratio)
 
       ctx.font = font
 
       const textMetrics = ctx.measureText(item.title)
       const textWidth = textMetrics.width
-      const fontSizeMatch = font.match(/(\d+)px/)
-      const textHeight = fontSizeMatch ? parseInt(fontSizeMatch[1]) : 12
+      const textHeight = parseFontSize(font)
 
       // 计算标注参考位置（原始图像坐标；非 rect 一律走 polygon 锚定，与原 else 分支一致）
       const strategy = item.type === "rect" ? this.shapeRenderers.rect : this.shapeRenderers.polygon
@@ -289,12 +306,18 @@ export class Renderer {
       const bgW = textWidth + paddingX * 2
       const bgH = textHeight + paddingY * 2
 
-      // 固定位置绘制：位置已在设置标题时按图片初始尺寸决定并写回，此处不再按边界重算
+      // 固定位置绘制：位置已在设置标题时按图片初始尺寸决定并写回，此处不再按边界重算；
+      // 其中存下来的偏移量与标题间距都是「画布像素」，导出时同样按倍率换算
       const { x: bgX, y: bgY } = computeTitleBox({
         anchor,
         boxWidth: bgW,
         boxHeight: bgH,
-        position: titlePos
+        position: {
+          ...titlePos,
+          offsetX: scalePx(titlePos.offsetX ?? 0, ratio),
+          offsetY: scalePx(titlePos.offsetY ?? 0, ratio)
+        },
+        gap: scalePx(DEFAULT_TITLE_GAP, ratio)
       })
 
       ctx.fillStyle = bgColor

@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2026-10-15
+
+### Fixed - 导出图里的标注文字过小
+
+`drawForExport()` 把标注画在**原始图像分辨率**的离屏 canvas 上，但字号 / 线宽 / 内边距 /
+圆角 / 顶点半径 / 标题间距与偏移仍然沿用**交互画布像素**常量：弹窗画布只有 ~950px 宽时
+14px 的字看着正常，导出成 1920 / 4000px 原图后相对整张图只剩 0.35%~0.73%，业务页面再把
+这张原图缩进 ~570px 宽的小面板显示，字形被重采样到 **1~3px**，看起来像"文本没画出来"。
+
+- `drawForExport()` 现在按 `1 / viewport.scale` 换算所有「画布像素量」：标题字号/内边距/圆角、
+  线宽、多边形顶点半径、标题间距与偏移、文本标注字号与内边距。导出图 = 当前视图的 `1/scale`
+  倍放大，换算后导出结果与所见一致（WYSIWYG）。
+- 文本标注背景框宽度改用**缩放后的字体重新测量**（`textMetrics.width`），不再使用按原字号
+  存下的 `textData.width`。
+- 顺带：新增 `parseFontSize` 统一解析字号，兼容 `bold 14px Arial` / `13.5px Arial`
+  （原 `(\d+)px` 会把 `13.5px` 误解析为 `5`）。
+- 仅改**导出路径**，`render()` 交互路径行为不变。
+
+### Tests
+
+- 新增 `__tests__/renderers/export-scaling.test.ts` 6 条：`scale = 1` 时保持原有导出行为、
+  `scale = 0.5` 时字号/内边距/圆角/线宽翻倍、标题位置含 gap 与偏移换算、多边形顶点半径
+  4→8、文本标注字号与背景框、`viewport.scale = 0` 退化为 1 倍且不产生 NaN。
+
 ## [1.3.3] - 2026-10-14
 
 ### Fixed - 拖拽 / 缩放后标题跑到图片外

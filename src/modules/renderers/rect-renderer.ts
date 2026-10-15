@@ -91,11 +91,13 @@ export class RectRenderer implements ShapeRenderStrategy {
 
   /**
    * 导出绘制（原 drawForExport 中 rect 分支，原始图像坐标系）
+   * 线宽由调用方（Renderer.drawForExport）按导出倍率设置，这里只需画几何
    */
   drawForExport(
     ctx: CanvasRenderingContext2D,
     record: Operate<Rect | Polygon>,
-    _style: AnnotationStyle
+    _style: AnnotationStyle,
+    _pixelRatio = 1
   ): void {
     const rect = record.data[0] as Rect
     ctx.strokeRect(rect.start.x, rect.start.y, rect.width, rect.height)

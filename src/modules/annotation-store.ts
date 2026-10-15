@@ -25,6 +25,7 @@ import type {
 import { deepClone, generateId } from './utils'
 import type { ViewportManager } from './viewport'
 import { getTitleAnchor, computeTitleLayout } from './renderers/title-layout'
+import { parseFontSize } from './renderers/export-scale'
 import type { ShapeStrategy, StrategyStore } from './shapes/shape-strategy'
 import { clampPoint, notifyShapeChange } from './shapes/shared'
 import { defaultShapeRegistry } from './registry'
@@ -639,8 +640,7 @@ export class AnnotationStore implements StrategyStore {
 
     const style = this.getEffectiveTitleStyle(annotation)
     const font = style.font || '12px Arial'
-    const fontSizeMatch = font.match(/(\d+)px/)
-    const fontSize = fontSizeMatch ? parseInt(fontSizeMatch[1]) : 12
+    const fontSize = parseFontSize(font)
     const boxHeight = fontSize + (style.paddingY ?? 3) * 2
 
     const measure = this.measureTitleWidth
