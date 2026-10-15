@@ -4,6 +4,7 @@
  */
 import Drawer from '../src/index';
 import type { AnnotationManager } from '../src/index';
+import { createDrawerWithImage, dispatchDoubleClick } from './helpers';
 
 // 工具函数：通过 bracket 访问 private annotationManager
 const am = (d: Drawer): AnnotationManager => d['annotationManager'];
@@ -490,5 +491,82 @@ describe('Title: getEffectiveTitleStyle / getEffectiveTitlePosition', () => {
     d.setTitlePosition({ align: 'left' });
     const p = am(d).getEffectiveTitlePosition(am(d).recordList[0]);
     expect(p.align).toBe('left');
+  });
+});
+
+describe('Title Editing Disabled: enableTitleEditing=false（禁止双击改文字）', () => {
+  const cleanup: (() => void)[] = [];
+  afterEach(() => {
+    cleanup.forEach((fn) => fn());
+    cleanup.length = 0;
+  });
+
+  const track = (d: Drawer, container: HTMLElement) =>
+    cleanup.push(() => {
+      d.destroy();
+      if (container.parentNode) container.parentNode.removeChild(container);
+    });
+
+  const pushRect = (d: Drawer) =>
+    am(d).recordList.push({
+      type: 'rect',
+      data: [{ start: { x: 100, y: 100 }, width: 100, height: 100 }],
+      status: 'fullfilled',
+    });
+
+  const isInputVisible = (d: Drawer) =>
+    (am(d).titleInput as HTMLInputElement).style.display === 'block';
+
+  it('双击已选中的标注不进入编辑态（输入框保持隐藏）', async () => {
+    const { drawer, canvas, container } = await createDrawerWithImage('no-edit-dbl', {
+      enableTitle: true,
+      enableTitleEditing: false,
+    });
+    track(drawer, container);
+    pushRect(drawer);
+    drawer.selectAnnotation(0);
+
+    dispatchDoubleClick(canvas, 150, 150);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
+    expect(isInputVisible(drawer)).toBe(false);
+  });
+
+  it('该开关只关「双击」手势：程序化 startTitleEditing 仍可用', async () => {
+    const { drawer, container } = await createDrawerWithImage('no-edit-call', {
+      enableTitle: true,
+      enableTitleEditing: false,
+    });
+    track(drawer, container);
+    pushRect(drawer);
+
+    expect(am(drawer).startTitleEditing(0)).toBe(true);
+    expect(isInputVisible(drawer)).toBe(true);
+  });
+
+  it('默认（未传 enableTitleEditing）双击仍可进入编辑态（回归保护）', async () => {
+    const { drawer, canvas, container } = await createDrawerWithImage('default-edit-dbl', {
+      enableTitle: true,
+    });
+    track(drawer, container);
+    pushRect(drawer);
+    drawer.selectAnnotation(0);
+
+    dispatchDoubleClick(canvas, 150, 150);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
+    expect(isInputVisible(drawer)).toBe(true);
+  });
+
+  it('禁止编辑不影响程序化设置标题', async () => {
+    const { drawer, container } = await createDrawerWithImage('no-edit-api', {
+      enableTitle: true,
+      enableTitleEditing: false,
+    });
+    track(drawer, container);
+    pushRect(drawer);
+
+    expect(drawer.setAnnotationTitle(0, 'A')).toBe(true);
+    expect(drawer.getAnnotationTitle(0)).toBe('A');
   });
 });

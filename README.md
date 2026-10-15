@@ -84,6 +84,7 @@ interface DrawerOptions {
   vertexStyle?: Partial<VertexStyle>;  // Vertex style
   textStyle?: Partial<TextStyle>;      // Text style
   enableTitle?: boolean;               // Enable annotation titles (default: false)
+  enableTitleEditing?: boolean;        // Allow double-click to edit the title text (default: true)
   clampToImageBounds?: boolean;        // Clamp drawing coords to image bounds (default: true)
 }
 ```
@@ -98,6 +99,7 @@ interface DrawerOptions {
 | `vertexStyle` | `Partial<VertexStyle>` | See `VertexStyle` | Polygon vertex style (size, colors, shape, etc.) |
 | `textStyle` | `Partial<TextStyle>` | See `TextStyle` | Text annotation style (font, color, background, etc.) |
 | `enableTitle` | `boolean` | `false` | Enable annotation title feature (must be explicitly enabled) |
+| `enableTitleEditing` | `boolean` | `true` | Whether double-clicking a selected annotation opens the title input. Set `false` to make titles read-only in the UI; they can still be set programmatically via `setAnnotationTitle`. Requires `enableTitle: true` |
 | `clampToImageBounds` | `boolean` | `true` | Clamp drawing coordinates (rect/polygon/text) to the image bounds, preventing negative or out-of-range stored coordinates; automatically skipped before the image is loaded. Set `false` to disable |
 
 ### Draw Types

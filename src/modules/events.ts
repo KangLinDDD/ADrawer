@@ -816,7 +816,9 @@ export class EventHandler {
     }
 
     // 如果双击了选中的标注（矩形/多边形），触发标题编辑
-    if (this.annotationManager.selectedAnnotation) {
+    // 注意：enableTitleEditing=false 只关掉「双击」这个手势，
+    // 程序化调用 annotationManager.startTitleEditing() 仍然可用
+    if (this.annotationManager.titleEditable && this.annotationManager.selectedAnnotation) {
       const imgCoords = this.viewport.toImageCoordinates(e.offsetX, e.offsetY)
       const clicked = this.annotationManager.getAnnotationAtPoint(imgCoords)
       if (clicked && clicked.index === this.annotationManager.selectedAnnotation.index) {

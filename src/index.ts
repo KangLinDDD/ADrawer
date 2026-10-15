@@ -126,7 +126,7 @@ export class Drawer {
   public drawType: DrawType = ""
 
   constructor(options: DrawerOptions) {
-    const { drawType, useEvents = true, id = "container", annotationColor, lineStyle, vertexStyle, textStyle, enableTitle = false, clampToImageBounds = true } = options
+    const { drawType, useEvents = true, id = "container", annotationColor, lineStyle, vertexStyle, textStyle, enableTitle = false, enableTitleEditing = true, clampToImageBounds = true } = options
 
     // 获取容器
     const container = document.getElementById(id)
@@ -187,6 +187,7 @@ export class Drawer {
     
     // 设置标题功能启用状态（默认 false）
     this.annotationManager.enableTitle = enableTitle
+    this.annotationManager.titleEditable = enableTitleEditing
     if (enableTitle) {
       this.annotationManager.initTitleSupport()
     }

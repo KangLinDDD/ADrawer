@@ -111,6 +111,9 @@ export class AnnotationStore implements StrategyStore {
   // 是否启用标题功能（默认 false，需在 DrawerOptions 中显式开启）
   public enableTitle = false
 
+  // 是否允许编辑标题文字（默认 true；关闭后双击不进入编辑态，标题只能由代码设置）
+  public titleEditable = true
+
   // 标题文字宽度测量函数（由 Drawer 用 canvas ctx 注入；未注入时设置标题只做垂直边缘判断）
   public measureTitleWidth?: (text: string, font: string) => number
 

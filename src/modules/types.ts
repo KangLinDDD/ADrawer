@@ -122,6 +122,13 @@ export type DrawerOptions = {
   textStyle?: Partial<TextStyle>
   /** 是否启用标注标题功能（默认 false，需显式开启） */
   enableTitle?: boolean
+  /**
+   * 是否允许**编辑**标注标题文字（默认 true）
+   *
+   * 关掉后：双击已选中的标注不会弹出标题输入框，标题只能由代码设置
+   * （`setAnnotationTitle`）。适合「标题由业务下拉决定、不允许手改」的场景。
+   */
+  enableTitleEditing?: boolean
   /** 是否将绘制坐标约束在图片边界内（默认 true，图片未加载时自动跳过） */
   clampToImageBounds?: boolean
 }

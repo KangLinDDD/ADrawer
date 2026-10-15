@@ -249,6 +249,9 @@
           <label style="margin-left: 10px; font-size: 12px; font-weight: normal;">
             <input type="checkbox" id="enable-title-toggle" checked onchange="toggleTitle()"> 启用
           </label>
+          <label style="margin-left: 10px; font-size: 12px; font-weight: normal;">
+            <input type="checkbox" id="title-editing-toggle" checked onchange="toggleTitleEditing()"> 允许双击改标题
+          </label>
         </div>
         <div class="toolbar-row">
           <div class="input-group">
@@ -549,6 +552,13 @@
       drawer.render();
     }
 
+    // 允许/禁止「双击改标题」：取消勾选后，双击已选中的标注不会弹出输入框（1.3.7+）
+    function toggleTitleEditing() {
+      const enabled = document.getElementById('title-editing-toggle').checked;
+      drawer.annotationManager.titleEditable = enabled;
+      drawer.render();
+    }
+
     // 更新按钮状态
     setInterval(() => {
       const selected = drawer.getSelectedAnnotation();
@@ -585,6 +595,7 @@
     window.updateTitleStyle = updateTitleStyle;
     window.updateTitlePosition = updateTitlePosition;
     window.toggleTitle = toggleTitle;
+    window.toggleTitleEditing = toggleTitleEditing;
   </script>
 </body>
 </html>

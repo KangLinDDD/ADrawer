@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.7] - 2026-10-15
+
+### Added - 可配置是否启用「双击编辑标题」
+
+- **新增构造选项 `enableTitleEditing`（默认 `true`）**：开发者可自行决定是否允许**双击**已选中的标注
+  弹出标题输入框。置为 `false` 时该手势不生效、标题在界面上只读，但仍可用 `setAnnotationTitle()`
+  程序化设置（适合「标题由业务下拉决定、不允许手改」的场景）。
+- 实现：`AnnotationStore.titleEditable` 在 `handleDoubleClick` 的**手势分支**上判断 —— **只关手势**，
+  内部 `startTitleEditing()` 等 API 不受影响；`enableTitle`、标题渲染与边缘自适应行为不变。
+
+### Tests
+
+- `__tests__/title.test.ts` 新增 4 条：`enableTitleEditing: false` 时双击不进入编辑态（真实双击手势，
+  两次 click 的去抖路径）、该开关只关手势而**程序化 `startTitleEditing` 仍可用**、默认仍可双击编辑
+  （回归保护）、禁止编辑不影响 `setAnnotationTitle`。
+
+### Docs
+
+- 两份 README（中/英）补充 `enableTitleEditing` 说明（代码示例 + 选项表）。
+
 ## [1.3.6] - 2026-10-15
 
 ### Fixed - 回退（withdraw）后选中项悬空导致鼠标交互崩溃

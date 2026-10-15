@@ -84,6 +84,7 @@ interface DrawerOptions {
   vertexStyle?: Partial<VertexStyle>;  // 顶点样式
   textStyle?: Partial<TextStyle>;      // 文本样式
   enableTitle?: boolean;               // 启用标注标题功能（默认：false）
+  enableTitleEditing?: boolean;        // 是否允许双击编辑标题文字（默认：true）
   clampToImageBounds?: boolean;        // 绘制坐标约束在图片边界内（默认：true）
 }
 ```
@@ -98,6 +99,7 @@ interface DrawerOptions {
 | `vertexStyle` | `Partial<VertexStyle>` | 见 `VertexStyle` | 多边形顶点样式（大小、颜色、形状等） |
 | `textStyle` | `Partial<TextStyle>` | 见 `TextStyle` | 文本标注样式（字体、颜色、背景等） |
 | `enableTitle` | `boolean` | `false` | 启用标注标题功能（需显式开启） |
+| `enableTitleEditing` | `boolean` | `true` | 双击已选中的标注是否弹出标题输入框。传 `false` 可让标题在界面上只读，仍可用 `setAnnotationTitle` 程序设置。需 `enableTitle: true` |
 | `clampToImageBounds` | `boolean` | `true` | 绘制时将坐标约束在图片边界内（矩形/多边形/文本），避免存储负值或超界坐标；图片未加载时自动跳过，传 `false` 可关闭 |
 
 ### 绘制类型
