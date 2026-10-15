@@ -239,14 +239,16 @@ export class Renderer {
     this.textManager.textAnnotations.forEach((textData) => {
       const globalStyle = this.textManager.textStyle
 
-      // 获取文本标注的样式（如果有保存的样式则使用，否则使用当前全局样式）
-      const textStyle = textData.style || {
-        font: globalStyle.font,
-        color: globalStyle.color,
-        backgroundColor: globalStyle.backgroundColor
-      }
+      // 获取文本标注的样式：逐字段回退到全局默认。
+      // 样式字段在类型上是必填，但外部直接写入 textAnnotations 时可能缺失：
+      // 缺 font 会让 scaleFont 抛错，被 exportAnnotationImage() 静默退回低清画布；
+      // 缺 color 则会被画成背景色，文字完全看不见。
+      const font = textData.style?.font || globalStyle.font || '16px Arial'
+      const color = textData.style?.color || globalStyle.color || '#FFD700'
+      const backgroundColor =
+        textData.style?.backgroundColor || globalStyle.backgroundColor || 'rgba(0,0,0,0.6)'
 
-      ctx.font = scaleFont(textStyle.font, ratio)
+      ctx.font = scaleFont(font, ratio)
 
       // 测量文本以获取准确的高度信息
       const textMetrics = ctx.measureText(textData.text)
@@ -263,16 +265,23 @@ export class Renderer {
       const r = scalePx(globalStyle.borderRadius, ratio)
 
       // 绘制背景
-      ctx.fillStyle = textStyle.backgroundColor
-      if ((ctx as unknown as { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect) {
-        (ctx as unknown as { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect(bgX, bgY, bgWidth, bgHeight, r)
+      ctx.fillStyle = backgroundColor
+      const roundRectCtx = ctx as unknown as {
+        roundRect: (x: number, y: number, w: number, h: number, r: number) => void
+      }
+      if (roundRectCtx.roundRect) {
+        // 必须先 beginPath：roundRect 是追加到当前路径的，而 fill() 填充整条路径。
+        // 漏掉它会让路径跨轮累积，后面每个框的 fill() 把前面所有框重填一遍，
+        // 从而盖住先画好的文字（表现：越靠前的标注标题越糊/看不见）。
+        ctx.beginPath()
+        roundRectCtx.roundRect(bgX, bgY, bgWidth, bgHeight, r)
         ctx.fill()
       } else {
         ctx.fillRect(bgX, bgY, bgWidth, bgHeight)
       }
 
       // 绘制文本：基线在背景框内部
-      ctx.fillStyle = textStyle.color
+      ctx.fillStyle = color
       ctx.fillText(textData.text, bgX + padding, bgY + padding + ascent)
     })
 
@@ -321,8 +330,14 @@ export class Renderer {
       })
 
       ctx.fillStyle = bgColor
-      if ((ctx as unknown as { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect) {
-        (ctx as unknown as { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect(bgX, bgY, bgW, bgH, borderRadius)
+      const roundRectCtx = ctx as unknown as {
+        roundRect: (x: number, y: number, w: number, h: number, r: number) => void
+      }
+      if (roundRectCtx.roundRect) {
+        // 同文本标注：必须先 beginPath，否则这次 fill() 会把之前所有标题框重填一遍，
+        // 把先画的标题文字盖成半透明残影（第一个标题最严重）。
+        ctx.beginPath()
+        roundRectCtx.roundRect(bgX, bgY, bgW, bgH, borderRadius)
         ctx.fill()
       } else {
         ctx.fillRect(bgX, bgY, bgW, bgH)

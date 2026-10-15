@@ -27,12 +27,13 @@ export function drawTextAnnotations(
     // 空文本不绘制
     if (!textData.text) return
 
-    // 获取文本标注的样式（如果有保存的样式则使用，否则使用当前全局样式）
-    const textStyle = textData.style || {
-      font: globalStyle.font,
-      color: globalStyle.color,
-      backgroundColor: globalStyle.backgroundColor
-    }
+    // 获取文本标注的样式：逐字段回退到全局默认。
+    // style 可能存在但缺字段（外部直接写入 textAnnotations 时）：
+    // 缺 font / color 都会让 canvas 静默忽略赋值，从而沿用上一次的字体、或把文字画成背景色。
+    const font = textData.style?.font || globalStyle.font || '16px Arial'
+    const color = textData.style?.color || globalStyle.color || '#FFD700'
+    const backgroundColor =
+      textData.style?.backgroundColor || globalStyle.backgroundColor || 'rgba(0,0,0,0.6)'
 
     // position 是背景框左上角
     const canvasX = viewport.offset.x + textData.position.x * viewport.scale
@@ -42,7 +43,7 @@ export function drawTextAnnotations(
     const isSelected = textManager.selectedTextIndex === index
 
     // 设置字体以获取准确的文本度量
-    ctx.font = textStyle.font
+    ctx.font = font
     const textMetrics = ctx.measureText(textData.text)
 
     // 计算文本实际高度（ascent + descent）
@@ -58,7 +59,7 @@ export function drawTextAnnotations(
     const boxHeight = actualTextHeight + globalStyle.padding * 2
 
     // 绘制背景（带圆角）
-    ctx.fillStyle = textStyle.backgroundColor
+    ctx.fillStyle = backgroundColor
     ctx.beginPath()
     ctx.roundRect(bgX, bgY, boxWidth, boxHeight, r)
     ctx.fill()
@@ -77,7 +78,7 @@ export function drawTextAnnotations(
     // 绘制文本：基线位置在背景框内部，向下偏移 ascent + padding
     const textBaselineX = canvasX + globalStyle.padding
     const textBaselineY = canvasY + globalStyle.padding + ascent
-    ctx.fillStyle = textStyle.color
+    ctx.fillStyle = color
     ctx.fillText(textData.text, textBaselineX, textBaselineY)
   })
 }

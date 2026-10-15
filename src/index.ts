@@ -643,8 +643,11 @@ export class Drawer {
       }
 
       const image = new Image()
-      image.src = this.bgImageSrc
+      // crossOrigin 必须在 src 之前设置（与 drawImage 保持一致）：
+      // 否则这次请求可能不带 CORS，离屏 canvas 会被污染，toDataURL 抛 SecurityError，
+      // 随后被下面的 catch 静默降级成 exportCurrentViewImage()（低清交互画布）。
       image.crossOrigin = "anonymous"
+      image.src = this.bgImageSrc
       image.onload = () => {
         try {
           this.renderer.drawForExport(

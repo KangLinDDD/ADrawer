@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.5] - 2026-10-15
+
+### Fixed - 导出图里靠前的标注标题被自己的底色反复盖住（越靠前越糊）
+
+`drawForExport()` 在 `roundRect()` 之前**没有调用 `ctx.beginPath()`**。Canvas 的 `roundRect()`
+是**追加**到当前路径的，而 `ctx.fill()` 填充的是**整条路径**，于是路径跨轮累积：
+
+```
+标题1: roundRect(框1) → fill() 只填框1 → 画白字1              ✅
+标题2: roundRect(框2) → 路径 = [框1, 框2] → fill() 把框1 也重填一遍
+                        → 框1 的半透明底色盖住了刚画的白色文字1  ❌
+```
+
+第 k 个标题会被后面的 `fill()` 各盖一层，残留 `(1 - 0.85)^(N-k)`。以 5 个标注为例：
+
+| 标题序号 | 被盖次数 | 残留 | 观感 |
+|---|---|---|---|
+| 1 | 4 | 0.05% | 完全看不见 |
+| 2 | 3 | 0.34% | 完全看不见 |
+| 3 | 2 | 2.25% | 几乎看不见 |
+| 4 | 1 | 15% | 明显发糊 |
+| 5 | 0 | 100% | 正常 |
+
+即**越靠前的标注标题越糊，最后一个完好**（实测 5 个标注导出：前 4 个标题的白色文字像素为
+**0**，只有第 5 个可读）。业务侧标题底色是 `rgba(255, 77, 79, 0.85)`，白字被盖一次后亮度落在
+149（框底色 131），肉眼观感就是"文字上又糊了一层红底"。
+
+- 修复：**标题框**与**文本标注背景**两处 `roundRect()` 前补 `ctx.beginPath()`。
+- 交互画布（`text-renderer.ts`）本来就正确调用了 `beginPath()`，所以弹窗内看着正常、
+  只有导出糊 —— 这也是该缺陷长期没被发现的原因。
+- 非 `roundRect` 分支用的 `fillRect()` 不走路径，因此无 `roundRect` 的老浏览器（Chrome < 99）
+  不触发本缺陷。
+
+### Fixed - 文本标注样式缺字段时的兜底
+
+`textData.style` 可能存在但**缺字段**（外部直接写入 `textManager.textAnnotations` 时）：
+
+- 缺 `font`：`scaleFont(undefined)` 会抛错，被 `exportAnnotationImage()` 的 catch **静默**降级为
+  `exportCurrentViewImage()`（低清交互画布）。现改为逐字段回退到全局默认。
+- 缺 `color`：`ctx.fillStyle = undefined` 被 canvas 静默忽略，文字被画成**背景色** → 完全看不见。
+  导出路径与交互路径（`text-renderer.ts`）均已修正。
+
+### Fixed - 离屏导出底图的 CORS 加载顺序
+
+`exportAnnotationImage()` 中 `image.src` 先于 `image.crossOrigin` 赋值（与 `drawImage()` 相反）。
+`src` 先赋值会让这次请求可能不带 CORS，离屏 canvas 被污染后 `toDataURL()` 抛 `SecurityError`，
+再被 catch 静默降级成低清画布。现与 `drawImage()` 对齐（先 `crossOrigin`、后 `src`）。
+
+### Tests
+
+- 新增 `__tests__/renderers/export-path.test.ts`：忠实建模 canvas 路径语义（`beginPath` 清空 /
+  `roundRect` 追加 / `fill` 快照整条路径），断言每次 `fill()` 的路径里**有且只有 1 个矩形**。
+  修复前第 2 次 `fill()` 的路径长度为 2（红），修复后恒为 1（绿）。
+- 新增 `__tests__/renderers/text-renderer-style-fallback.test.ts`，并扩展
+  `__tests__/renderers/export-scaling.test.ts`：样式缺字段时回退全局默认、不抛错、不画成背景色。
+- 新增 `__tests__/export-image.test.ts`：导出路径与主画布路径的 `crossOrigin` / `src` 顺序一致。
+
 ## [1.3.4] - 2026-10-15
 
 ### Fixed - 导出图里的标注文字过小

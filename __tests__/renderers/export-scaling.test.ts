@@ -12,9 +12,8 @@ import Drawer from '../../src/index'
 type Stub = Record<string, any>
 
 function makeCtx(): Stub {
-  return {
+  const ctx: Stub = {
     font: '10px sans-serif',
-    fillStyle: '',
     strokeStyle: '',
     lineWidth: 1,
     textAlign: 'start',
@@ -41,6 +40,19 @@ function makeCtx(): Stub {
       actualBoundingBoxDescent: 4
     }))
   }
+
+  // 真 canvas 的 fillStyle 是访问器：赋 undefined / 非法值会被静默忽略，保留上一次的值。
+  // 这里照实建模，否则测不出「文字被画成背景色」这个真实症状。
+  let fillStyle = ''
+  Object.defineProperty(ctx, 'fillStyle', {
+    get: () => fillStyle,
+    set: (value: unknown) => {
+      if (value !== undefined && value !== null) fillStyle = value as string
+    },
+    enumerable: true
+  })
+
+  return ctx
 }
 
 /**
@@ -222,5 +234,65 @@ describe('drawForExport：导出图按 1 / viewport.scale 放大画布像素量'
     expect(
       ctx.fillText.mock.calls.every((c: any[]) => Number.isFinite(c[1]) && Number.isFinite(c[2]))
     ).toBe(true)
+  })
+})
+
+describe('文本标注 style 缺字段时的兜底（外部直接写入 textAnnotations 的容错）', () => {
+  const drawers: Array<{ drawer: Drawer; container: HTMLDivElement }> = []
+
+  afterEach(() => {
+    drawers.forEach(({ drawer, container }) => {
+      drawer.destroy()
+      if (container.parentNode) container.parentNode.removeChild(container)
+    })
+    drawers.length = 0
+  })
+
+  const openWithPartialStyle = (id: string, style: Record<string, unknown>) => {
+    const created = createDrawer(id, 800, 600, 1600, 1200)
+    drawers.push(created)
+    ;(created.drawer as any).textManager.textAnnotations.push({
+      id: 'partial',
+      position: { x: 50, y: 50 },
+      text: 'AB',
+      style,
+      width: 16,
+      height: 16
+    })
+    return created.drawer
+  }
+
+  it('style 缺 font 时不抛错（此前会抛，并被 exportAnnotationImage 静默退回低清画布）', () => {
+    const drawer = openWithPartialStyle('export-partial-font', {
+      color: '#00FF00',
+      backgroundColor: 'rgba(0,0,0,0.6)'
+    })
+
+    const ctx = makeCtx()
+    expect(() =>
+      (drawer as any).renderer.drawForExport(ctx as any, new Image(), 1600, 1200)
+    ).not.toThrow()
+    // 回退到全局默认字体 16px，再按 ratio = 2 放大
+    expect(ctx.font).toBe('32px Arial')
+  })
+
+  it('style 缺 color 时文字用全局默认色，不会被画成背景色（不可见）', () => {
+    const drawer = openWithPartialStyle('export-partial-color', {
+      font: '16px Arial',
+      backgroundColor: '#123456'
+    })
+
+    const ctx = makeCtx()
+    const fillsAtDraw: string[] = []
+    ctx.fillText.mockImplementation(() => {
+      fillsAtDraw.push(ctx.fillStyle as string)
+    })
+
+    ;(drawer as any).renderer.drawForExport(ctx as any, new Image(), 1600, 1200)
+
+    expect(fillsAtDraw.length).toBe(1)
+    // 绝不能等于背景色，否则文字与背景同色 = 完全看不见
+    expect(fillsAtDraw[0]).not.toBe('#123456')
+    expect(fillsAtDraw[0]).toBe('#FFD700')
   })
 })
