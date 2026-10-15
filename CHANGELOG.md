@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.6] - 2026-10-15
+
+### Fixed - 回退（withdraw）后选中项悬空导致鼠标交互崩溃
+
+选中最后一条标注后点「回退」（或按 Ctrl/Cmd+Z），`recordList.pop()` 移除了该条，
+而 `selectedAnnotation` 仍指向已不存在的索引；此后鼠标移到画布上会走
+`updateCursor → getHandleAtPoint → 策略 getHandles`，读到 `undefined.data` 并抛
+`TypeError: Cannot read properties of undefined (reading 'data')`。
+
+- **根因修复**：`withdraw()` 在改动 `recordList` 的两个分支后调用新增的 `validateSelection()`，
+  选中索引越界即 `deselectAnnotation()`（与 `deleteSelectedAnnotation` / `clear` 的既有行为一致）。
+- **兜底防护**：`getHandleAtPoint` 返回 `null`，`startResizing` / `resizeRect` / `resizePolygon`
+  返回 `false`，并在这些位置自愈为未选中，避免任何路径把 `undefined` 记录继续传下去。
+- 选中项仍合法时行为不变（回退掉的不是选中那条，选中态保持）。
+
+### Tests
+
+- 新增 `__tests__/withdraw-selection.test.ts`：回退掉选中项后选中态被清空、回退非选中项时选中态保持、
+  回退后 `getHandleAtPoint` 不再抛错、悬空选中态下 resize 系列不抛错并自愈、恢复已删除标注后选中项仍有效。
+
 ## [1.3.5] - 2026-10-15
 
 ### Fixed - 导出图里靠前的标注标题被自己的底色反复盖住（越靠前越糊）

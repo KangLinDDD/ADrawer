@@ -392,11 +392,13 @@ export class AnnotationStore implements StrategyStore {
       const { annotation, index } = this.deleteHistory.pop()!
       // 在原来的位置插入
       this.recordList.splice(index, 0, annotation)
+      this.validateSelection()
       return true
     }
     if (this.recordList.length > 0) {
       // 撤销已完成的操作
       this.recordList.pop()
+      this.validateSelection()
       return true
     }
     return false
@@ -438,6 +440,19 @@ export class AnnotationStore implements StrategyStore {
     this.activeHandle = null
     this.originalRect = null
     this.originalPolygon = null
+  }
+
+  /**
+   * 记录集变动后校验选中项：索引越界说明选中的标注已不存在
+   * （典型场景：选中最后一条后点「回退」，该条被 pop 掉），必须取消选中。
+   * 否则后续鼠标交互会拿着悬空索引去取记录，在 `getHandleAtPoint` / `resize` 里
+   * 读到 `undefined` 并抛出 `Cannot read properties of undefined (reading 'data')`。
+   */
+  protected validateSelection(): void {
+    const selected = this.selectedAnnotation
+    if (selected && (selected.index < 0 || selected.index >= this.recordList.length)) {
+      this.deselectAnnotation()
+    }
   }
 
   /**

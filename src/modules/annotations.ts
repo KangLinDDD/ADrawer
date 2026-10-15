@@ -104,6 +104,11 @@ export class AnnotationManager extends AnnotationStore {
     this.isResizing = true
 
     const annotation = this.recordList[this.selectedAnnotation.index]
+    // 选中项索引悬空（如「回退」撤销掉选中的那条）时自愈为未选中，避免把 undefined 传下去
+    if (!annotation) {
+      this.deselectAnnotation()
+      return false
+    }
     if (annotation.type === "rect") {
       this.originalRect = this.strategyOf('rect').snapshotForResize(annotation) as Rect
     } else if (annotation.type === "polygon") {
@@ -126,6 +131,11 @@ export class AnnotationManager extends AnnotationStore {
     }
 
     const annotation = this.recordList[this.selectedAnnotation.index]
+    // 选中项索引悬空（如「回退」撤销掉选中的那条）时自愈为未选中，避免把 undefined 传下去
+    if (!annotation) {
+      this.deselectAnnotation()
+      return false
+    }
     // 鼠标可能拖到图外：先把点夹到图片边界，避免把矩形缩出边界
     const clampedPoint = this.clampToImageBounds(currentPoint)
     const newHandleIndex = this.strategyOf('rect').resize(annotation, this.activeHandle.index, clampedPoint, this.originalRect)
@@ -144,6 +154,11 @@ export class AnnotationManager extends AnnotationStore {
     }
 
     const annotation = this.recordList[this.selectedAnnotation.index]
+    // 选中项索引悬空（如「回退」撤销掉选中的那条）时自愈为未选中，避免把 undefined 传下去
+    if (!annotation) {
+      this.deselectAnnotation()
+      return false
+    }
     const vertexIndex = this.activeHandle.index
     const polygon = annotation.data as Polygon[]
 
@@ -186,6 +201,11 @@ export class AnnotationManager extends AnnotationStore {
     if (this.selectedAnnotation.locked === true) return null
 
     const annotation = this.recordList[this.selectedAnnotation.index]
+    // 选中项索引悬空时自愈为未选中，直接返回（此处就是线上崩溃的发生点）
+    if (!annotation) {
+      this.deselectAnnotation()
+      return null
+    }
     const handleSize = this.selectionStyle.handleSize
     const halfHandle = handleSize / 2
     const type = this.selectedAnnotation.type as 'rect' | 'polygon'
