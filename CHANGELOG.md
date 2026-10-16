@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.8] - 2026-10-15
+
+### Changed - `enableTitleEditing` 扩展为「不允许用户编辑标注上的文字」
+
+- **`enableTitleEditing: false` 现在同时作用于文本标注**：双击文本不再进入编辑态，
+  程序化 `addTextAnnotation()` 也不再自动弹出输入框（原先只关形状标题的双击编辑）。
+  需要「文字只由业务决定、用户不可改」时，用这一个开关即可。
+
+### Tests
+
+- `__tests__/shapes/text-manager.test.ts` 新增 4 条：`locked` 标记与不进入编辑态、只读不可点中、
+  编辑/更新/移动/删除均被拒绝、未加 `locked` 时行为不变（回归保护）。
+
 ## [1.3.7] - 2026-10-15
 
 ### Added - 可配置是否启用「双击编辑标题」

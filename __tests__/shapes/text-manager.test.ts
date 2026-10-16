@@ -177,3 +177,34 @@ describe('TextAnnotationManager 移动/编辑状态拆分', () => {
     })
   })
 })
+
+describe('textEditable=false（enableTitleEditing=false 时不允许编辑标注文字）', () => {
+  const createManager = () => {
+    const viewport = new ViewportManager()
+    viewport.setOriginalSize(800, 600)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const canvas = document.createElement('canvas')
+    return new TextAnnotationManager(viewport, container, canvas.getContext('2d')!, undefined)
+  }
+
+  it('双击（startEditing）不进入编辑态', () => {
+    const manager = createManager()
+    manager.textEditable = false
+    const index = manager.addTextAnnotation(10, 20, 'hello')
+
+    expect(manager.startEditing(index)).toBe(false)
+    expect(manager.editingTextIndex).toBe(null)
+  })
+
+  it('程序化创建也不自动弹出输入框；默认（true）行为不变', () => {
+    const manager = createManager()
+    manager.textEditable = false
+    manager.addTextAnnotation(10, 20, 'hello')
+    expect(manager.editingTextIndex).toBe(null)
+
+    const manager2 = createManager()
+    const index2 = manager2.addTextAnnotation(10, 20, 'hello')
+    expect(manager2.editingTextIndex).toBe(index2)
+  })
+})

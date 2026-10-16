@@ -9,6 +9,14 @@ import { deepClone, generateId } from '../utils'
 import { clampPoint, notifyShapeChange } from './shared'
 
 export class TextAnnotationManager {
+  /**
+   * 是否允许**用户**编辑文本标注内容（默认 true）
+   *
+   * 由 Drawer 的 `enableTitleEditing` 统一控制：false 时双击不进入编辑态，
+   * 程序化创建也不再自动弹出输入框。
+   */
+  public textEditable = true
+
   // 文本标注列表
   public textAnnotations: TextAnnotation[] = []
   
@@ -276,8 +284,10 @@ export class TextAnnotationManager {
     // 添加新标注后清空删除历史
     this.deleteHistory = []
     
-    // 直接进入编辑模式
-    this.startEditing(index)
+    // 不允许用户编辑标注文字时不进入编辑态
+    if (this.textEditable) {
+      this.startEditing(index)
+    }
     
     return index
   }
@@ -371,6 +381,8 @@ export class TextAnnotationManager {
     }
 
     const textData = this.textAnnotations[index]
+    // 不允许用户编辑标注文字时，双击也不进入编辑态
+    if (!this.textEditable) return false
     this.editingTextIndex = index
     this.currentEditingIndex = index
     this.textBeforeEditing = textData.text

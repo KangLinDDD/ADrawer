@@ -211,6 +211,9 @@ export class Drawer {
     // 设置图片边界约束开关（默认 true）
     this.textManager.clampEnabled = clampToImageBounds
 
+    // 与形状标题共用同一个开关：不允许用户编辑标注上的文字（文本标注也受控）
+    this.textManager.textEditable = enableTitleEditing
+
     this.renderer = new Renderer(this.ctx, this.viewport, this.annotationManager, this.textManager)
     this.eventHandler = new EventHandler(
       this.canvas,
