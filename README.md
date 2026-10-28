@@ -190,8 +190,27 @@ drawer.exportAnnotationImage().then(base64 => { ... });
 // Export current view
 drawer.exportCurrentViewImage().then(base64 => { ... });
 
+// Optional config (both methods):
+//   type    overrides the export format (default: follow the background image); 'jpg' === 'jpeg'
+//   quality encoding quality 0–1 for lossy formats (jpeg / webp), default 0.92; png ignores it
+drawer.exportAnnotationImage({ quality: 0.8 }).then(base64 => { ... }); // smaller file
+drawer.exportAnnotationImage({ type: 'png' }).then(base64 => { ... });  // force lossless, bigger
+
+// Only 3 formats can actually be encoded by canvas (spec / implementation, not our choice):
+//   image/png   always supported; also the fallback when the requested type is unsupported
+//   image/jpeg  every modern browser
+//   image/webp  Chrome 17+ / Firefox 96+ / Edge 79+; Safari (incl. iOS) still cannot encode → PNG
+// Everything else (gif / bmp / svg / avif / jxl / tiff / heic / non-standard image/jpg …) has no
+// encoder in the browser and silently falls back to PNG. So `type` is only a *request* — trust the
+// data URL prefix for the real format.
+
 // Convert to File
-const file = drawer.base64ToFile(base64, 'annotation.jpg');
+// ⚠️ Derive the extension from the data URL's actual MIME; don't hard-code `.jpg`:
+//    the export format follows the background image (png → image/png, jpeg → image/jpeg),
+//    while formats canvas cannot encode (gif / bmp / svg) fall back to PNG.
+const mime = /^data:(image\/[a-z0-9.+-]+)/i.exec(base64)?.[1] ?? 'image/jpeg';
+const ext = mime === 'image/jpeg' ? 'jpg' : mime.slice('image/'.length);
+const file = drawer.base64ToFile(base64, `annotation.${ext}`);
 ```
 
 #### Clear & Undo

@@ -212,6 +212,29 @@ export type ColorConfig = {
   default?: string
 }
 
+/**
+ * 导出图片的可选配置（`exportAnnotationImage()` / `exportCurrentViewImage()`）。
+ */
+export type ExportImageOptions = {
+  /**
+   * 导出格式，默认跟随底图后缀：
+   * `.jpg` / `.jpeg` → `jpeg`、`.png` → `png`、`.webp` → `webp`、
+   * `.gif` / `.bmp` / `.svg` → `png`、无后缀 → `jpeg`。
+   * 传 `'jpg'` 等价于 `'jpeg'`。
+   *
+   * ⚠️ 这 3 种是 `toDataURL()` 唯一能真正编码的类型（规范只强制 `png`），
+   * 其余格式浏览器没有编码器，会**静默回落成 PNG**；另有浏览器差异：
+   * `webp` 在 Safari（含 iOS）上也会回落 PNG（Chrome 17+ / Firefox 96+ / Edge 79+ 支持）。
+   * 所以 `type` 只是「请求」——真实格式请以返回的 data URL 前缀为准。
+   */
+  type?: 'png' | 'jpeg' | 'webp' | 'jpg'
+  /**
+   * 有损格式（`jpeg` / `webp`）的编码质量，取值 0–1，默认 `0.92`；
+   * 越界按 0–1 裁剪，非数字用默认值。无损的 `png` 忽略该值。
+   */
+  quality?: number
+}
+
 /** 视口尺寸 */
 export type ViewportSize = {
   width: number

@@ -40,6 +40,7 @@ export type {
   DrawerListener,
   ShapeChangePayload,
   ChangeNotify,
+  ExportImageOptions,
 } from './modules/types'
 
 // 导出工具函数
@@ -47,6 +48,8 @@ export {
   isPointInRect, 
   isPointInPolygon, 
   getImageTypeFromUrl,
+  toCanvasImageType,
+  DEFAULT_EXPORT_QUALITY,
   base64ToFile,
   base64ToBlob,
   getZoomDelta,
@@ -77,14 +80,22 @@ import type {
   TitleStyle,
   TitlePosition
 } from './modules/types'
-import { getImageTypeFromUrl, base64ToFile, base64ToBlob, getZoomDelta } from './modules/utils'
+import {
+  getImageTypeFromUrl,
+  toCanvasImageType,
+  normalizeExportQuality,
+  base64ToFile,
+  base64ToBlob,
+  getZoomDelta,
+  type CanvasImageType,
+} from './modules/utils'
 import { ViewportManager } from './modules/viewport'
 import { AnnotationManager } from './modules/annotations'
 import { TextAnnotationManager } from './modules/shapes/text-manager'
 import { Renderer } from './modules/renderer'
 import { EventHandler } from './modules/events'
 import { Emitter } from './modules/emitter'
-import type { DrawerEventName, DrawerListener } from './modules/types'
+import type { DrawerEventName, DrawerListener, ExportImageOptions } from './modules/types'
 
 /**
  * Drawer 类 - 图片标注库的主入口
@@ -120,7 +131,12 @@ export class Drawer {
   // 图片相关
   private bgImage: HTMLImageElement | null = null
   private bgImageSrc = ""
-  private bgImageExt = "jpeg"
+  /**
+   * 导出时真正传给 `toDataURL()` 的类型。
+   * 不能直接用 URL 后缀：`image/jpg` / `image/gif` / `image/bmp` / `image/svg` 都不是
+   * canvas 支持的编码类型，浏览器会静默回落成 PNG，导出的内容类型就会与后缀脱节。
+   */
+  private bgImageExportType: CanvasImageType = "jpeg"
 
   // 绘制类型
   public drawType: DrawType = ""
@@ -297,7 +313,8 @@ export class Drawer {
    */
   public drawImage(src: string): void {
     this.bgImageSrc = src
-    this.bgImageExt = getImageTypeFromUrl(src)
+    // 归一化成 canvas 能真正编码的类型（.jpg → jpeg；gif/bmp/svg → png）
+    this.bgImageExportType = toCanvasImageType(getImageTypeFromUrl(src))
     
     const img = new Image()
     img.crossOrigin = "anonymous"
@@ -626,9 +643,41 @@ export class Drawer {
   }
 
   /**
-   * 导出原始尺寸标注图片
+   * 解析导出格式：`options.type` 优先，否则跟随底图类型。
+   *
+   * `png` 是无损的、不接受质量参数 —— 显式不传，避免调用方误以为 `quality` 生效。
    */
-  public exportAnnotationImage(): Promise<string> {
+  private resolveExportFormat(options?: ExportImageOptions): { mime: string; quality?: number } {
+    const type = options?.type ? toCanvasImageType(options.type) : this.bgImageExportType
+    const mime = `image/${type}`
+
+    if (type === "png") return { mime }
+
+    return { mime, quality: normalizeExportQuality(options?.quality) }
+  }
+
+  /**
+   * 按导出配置把 canvas 编码成 data URL（`png` 不带质量参数）。
+   */
+  private canvasToDataUrl(canvas: HTMLCanvasElement, options?: ExportImageOptions): string {
+    const { mime, quality } = this.resolveExportFormat(options)
+
+    return quality === undefined ? canvas.toDataURL(mime) : canvas.toDataURL(mime, quality)
+  }
+
+  /**
+   * 导出原始尺寸标注图片
+   *
+   * @param options - 可选导出配置：`type` 覆盖格式（默认跟随底图）、
+   *                  `quality` 覆盖有损格式（jpeg/webp）的编码质量（默认 0.92，png 忽略）
+   * @example
+   * ```typescript
+   * await drawer.exportAnnotationImage()                    // 跟随底图，jpeg 用 0.92
+   * await drawer.exportAnnotationImage({ quality: 0.8 })    // 更小的文件
+   * await drawer.exportAnnotationImage({ type: 'png' })     // 强制无损 PNG
+   * ```
+   */
+  public exportAnnotationImage(options?: ExportImageOptions): Promise<string> {
     return new Promise((resolve, reject) => {
       if (!this.bgImage) {
         reject(new Error("No background image loaded"))
@@ -660,10 +709,11 @@ export class Drawer {
             this.viewport.originalWidth,
             this.viewport.originalHeight
           )
-          const base64 = offscreenCanvas.toDataURL(`image/${this.bgImageExt}`, 0.7)
+          const base64 = this.canvasToDataUrl(offscreenCanvas, options)
           resolve(base64)
         } catch (e) {
-          this.exportCurrentViewImage()
+          // 降级到交互画布时沿用同一套导出配置，保证内容类型与调用方要求一致
+          this.exportCurrentViewImage(options)
             .then(resolve)
             .catch((err) => reject(new Error(`Both methods failed: ${err.message}`)))
         }
@@ -676,11 +726,13 @@ export class Drawer {
 
   /**
    * 导出当前视图为 base64 图片
+   *
+   * @param options - 可选导出配置，含义与 `exportAnnotationImage()` 一致
    */
-  public exportCurrentViewImage(): Promise<string> {
+  public exportCurrentViewImage(options?: ExportImageOptions): Promise<string> {
     return new Promise((resolve, reject) => {
       try {
-        const base64 = this.canvas.toDataURL(`image/${this.bgImageExt}`)
+        const base64 = this.canvasToDataUrl(this.canvas, options)
         resolve(base64)
       } catch (e: any) {
         reject(new Error(`Failed to export current view: ${e.message}`))

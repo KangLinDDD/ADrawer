@@ -68,6 +68,52 @@ export function getImageTypeFromUrl(urlString: string): string {
 }
 
 /**
+ * canvas 真正支持的编码类型。
+ */
+export type CanvasImageType = "png" | "jpeg" | "webp"
+
+/**
+ * 把「URL 后缀」归一化成 `canvas.toDataURL()` 能**真正编码**的类型。
+ *
+ * `toDataURL(type)` 只认 `png` / `jpeg` / `webp`：其余（`image/jpg`、`image/gif`、
+ * `image/bmp`、`image/svg` …）都不是合法的 canvas 编码类型，浏览器会**静默回落成 PNG**。
+ * 于是 `data:image/png` 配上 `.jpg` 的文件名 —— 内容与后缀脱节，上传/回填按后缀或
+ * Content-Type 校验时就会出问题。这里统一收敛：
+ *
+ * - `jpg` / `jpeg` → `jpeg`（`image/jpg` 不被支持，必须映射成 `image/jpeg`）
+ * - `png` / `webp` → 原样
+ * - `gif` / `bmp` / `svg` / 未知 → `png`（无损，也是浏览器的回落格式）
+ */
+export function toCanvasImageType(extension: string): CanvasImageType {
+  const ext = String(extension ?? "").toLowerCase()
+
+  if (ext === "jpg" || ext === "jpeg") return "jpeg"
+  if (ext === "webp") return "webp"
+  if (ext === "png") return "png"
+
+  return "png"
+}
+
+/**
+ * 导出 JPEG / WebP 的默认编码质量（`png` 无损，忽略该值）。
+ *
+ * 标注本身多是细线、小字，压缩过狠会在重新放大查看时糊掉，所以默认取 0.92
+ * （也是多数浏览器 `toDataURL()` 不传质量时的默认档位）。
+ */
+export const DEFAULT_EXPORT_QUALITY = 0.92
+
+/**
+ * 归一化编码质量：非数字 / NaN 用默认值，越界按 0–1 裁剪。
+ */
+export function normalizeExportQuality(quality?: number): number {
+  if (typeof quality !== "number" || Number.isNaN(quality)) {
+    return DEFAULT_EXPORT_QUALITY
+  }
+
+  return Math.min(1, Math.max(0, quality))
+}
+
+/**
  * 将 base64 字符串转换为 File 对象
  */
 export function base64ToFile(base64Data: string, filename: string): File {

@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.9] - 2026-10-27
+
+### Added - 导出可指定格式与质量
+
+- `exportAnnotationImage(options?)` / `exportCurrentViewImage(options?)` 新增可选参数
+  `{ type, quality }`：
+  - `type`：`'png' | 'jpeg' | 'webp' | 'jpg'`，覆盖导出格式（默认跟随底图）；`'jpg'` 归一成 `'jpeg'`；
+  - `quality`：有损格式（jpeg / webp）的编码质量 0–1，默认 `0.92`；越界按 0–1 裁剪、
+    非数字回落默认值；**png 无损，忽略该值**（`toDataURL()` 只传一个参数）。
+- 新增导出常量 `DEFAULT_EXPORT_QUALITY`（`0.92`）、工具函数 `toCanvasImageType()`。
+- 离屏导出失败降级到 `exportCurrentViewImage()` 时，**沿用同一套 options**，
+  避免「要求 png 却拿到 jpeg」这类格式漂移。
+
+### Changed - 默认导出质量 0.7 → 0.92
+
+- 原先离屏导出写死 `quality = 0.7`，标注多是细线和小字，重新放大查看会明显发糊；
+  现在默认 0.92（多数浏览器不传质量时的默认档），文件会略大。需要更小体积时显式传
+  `{ quality: 0.8 }` 之类即可。
+
+### Fixed - `.jpg` 底图导出的内容其实是 PNG（内容与后缀脱节）
+
+- 导出走 `canvas.toDataURL(\`image/${ext}\`)`，而 `ext` 直接取自底图 URL 后缀：
+  `.jpg` → `image/jpg`（`.gif` / `.bmp` / `.svg` 同理）。`toDataURL()` 只支持
+  `png` / `jpeg` / `webp`，其余类型会被浏览器**静默回落成 PNG** —— 于是 `.jpg` 底图
+  导出的其实是 `data:image/png`，业务再按原图后缀命名成 `.jpg`，就成了
+  「PNG 内容 + `.jpg` 后缀」，上传 / 回填按后缀或 Content-Type 校验时会出问题。
+- 新增 `toCanvasImageType()`：把 URL 后缀归一化成 canvas 真能编码的类型
+  （`jpg` / `jpeg` → `jpeg`；`png` / `webp` 原样；`gif` / `bmp` / `svg` / 未知 → `png`），
+  `exportAnnotationImage()` 与 `exportCurrentViewImage()` 统一改用它。
+- **行为变化**：`.jpg` 底图现在导出**真正的 JPEG**（此前实际是 PNG）；无后缀地址仍是 jpeg。
+- README（中/英）的导出示例不再写死 `annotation.jpg`，改为按 data URL 的 MIME 推后缀，
+  并补充了 `{ type, quality }` 的用法。
+
+### Tests
+
+- `__tests__/export-image.test.ts` 新增 22 条：8 种底图地址（jpg / jpeg / png / webp /
+  gif / bmp / svg / 无后缀）导出时传给 `toDataURL` 的类型、`exportCurrentViewImage`
+  同源归一化、`toCanvasImageType` 的规则与「任何 URL 都能拿到可编码类型」的串联断言；
+  以及 `{ type, quality }` 的覆盖、`'jpg'` 别名、png 忽略质量、越界/非数字归一化、
+  降级路径沿用 options。
+
 ## [1.3.8] - 2026-10-15
 
 ### Changed - `enableTitleEditing` 扩展为「不允许用户编辑标注上的文字」

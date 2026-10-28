@@ -190,8 +190,26 @@ drawer.exportAnnotationImage().then(base64 => { ... });
 // 导出当前视图
 drawer.exportCurrentViewImage().then(base64 => { ... });
 
+// 可选配置（两个方法都支持）：
+//   type    覆盖导出格式，默认跟随底图；'jpg' 等价于 'jpeg'
+//   quality 有损格式（jpeg / webp）的编码质量 0–1，默认 0.92；png 无损、忽略该值
+drawer.exportAnnotationImage({ quality: 0.8 }).then(base64 => { ... }); // 文件更小
+drawer.exportAnnotationImage({ type: 'png' }).then(base64 => { ... });  // 强制无损，体积更大
+
+// 能被 canvas 真正编码的只有 3 种（规范/实现所限，不是本库的选择）：
+//   image/png   永远支持；请求其它类型不被支持时也会回落到它
+//   image/jpeg  所有现代浏览器
+//   image/webp  Chrome 17+ / Firefox 96+ / Edge 79+；Safari（含 iOS）至今不支持编码 → 回落 PNG
+// 其余格式（gif / bmp / svg / avif / jxl / tiff / heic / 非标准 image/jpg …）浏览器没有
+// 编码器，一律静默回落成 PNG。因此 type 只是「请求」，真实格式请以返回的 data URL 前缀为准。
+
 // 转换为 File
-const file = drawer.base64ToFile(base64, 'annotation.jpg');
+// ⚠️ 后缀请按 data URL 的实际 MIME 推断，不要写死成 .jpg：
+//    导出格式跟随底图（png 底图 → image/png、jpeg 底图 → image/jpeg），
+//    canvas 编码不出的格式（gif / bmp / svg）会回落成 PNG，写死后缀会与内容脱节。
+const mime = /^data:(image\/[a-z0-9.+-]+)/i.exec(base64)?.[1] ?? 'image/jpeg';
+const ext = mime === 'image/jpeg' ? 'jpg' : mime.slice('image/'.length);
+const file = drawer.base64ToFile(base64, `annotation.${ext}`);
 ```
 
 #### 清除与撤销
