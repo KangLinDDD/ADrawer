@@ -26,6 +26,7 @@
 3. 不截断：所有文字参与渲染，宁可纵向生长。
 4. 选中标注后可直接拖拽标题：右边缘把手改宽度并实时换行，框体拖动改位置。
 5. 手动调整优先于自动布局，可重置；画布、导出、设置时三处布局一致。
+6. 提供正式的导入入口 `setAnnotations` / `addAnnotation`，导入的标注与手画标注展示一致。
 
 ## 非目标
 
@@ -46,6 +47,8 @@
 | 是否截断 | 不截断，文字全部显示 |
 | 手动控制 | 拖右边缘改宽度、拖框体移动 |
 | 手动 vs 自动 | 手动调整后该标题停止自动兜底，可 API 重置 |
+| API 注入的标注 | 绘制前自动补算一次布局，与手画标注一致 |
+| 导入入口 | 新增 `setAnnotations` / `addAnnotation`，并接入标题布局 |
 | 字号 | 不参与拖拽 |
 
 ## 设计
@@ -246,7 +249,74 @@ resetAnnotationTitleLayout(ref: number | string): boolean
 `setAnnotationTitleStyle()` 修改字号/padding 后，对未显式设置的标注重跑自动布局（宽度由 `TitlePosition.width` 控制，不走样式）。
 `setAnnotationTitlePosition(ref, { width })` 可直接程序化设定宽度（同时会被视为显式布局，不参与自动兜底）。
 
-### 8. 边界情况
+### 8. 外部数据 / API 设置的标注
+
+**问题**：自动布局目前只在三个入口触发——`setTitle()` / `finishTitleEditing()`、`finishMovingAnnotation()`、`drawImage()` 的 `adjustTitlePositions()`。如果业务方不是画出来的，而是把标注对象（带 `title` / `style`）直接塞进 `recordList` 或反序列化回来，标题不会经过自动布局：`vertical` 保持全局默认 `top`、`offsetX` 为 0，长标题/等高标注仍然会画到图片外。
+
+**方案：绘制前保证布局已计算一次（lazy ensure）**
+
+在 `AnnotationStore` 增加：
+
+```ts
+/** 对所有「有标题、未显式设置位置、尚未布局过」的标注补算一次布局（图片未加载时跳过） */
+public ensureTitleLayouts(): void
+
+/** 图片切换/清空时丢弃缓存 */
+private titleLayoutSynced = new WeakSet<Operate<Rect | Polygon>>()
+```
+
+- `Renderer.render()` 与 `Renderer.drawForExport()` 开头调用 `ensureTitleLayouts()`；
+- 以标注对象引用为 key 的 `WeakSet` 记录已布局，**每个标注只算一次**，不会在缩放/拖动时每帧重算（保持现有「标题位置固定」的行为）；
+- 未显式设置位置、且图片已加载 → 调用 `autoAdjustTitlePosition()`；
+- 显式位置（`titlePositionExplicit: true`）跳过，但仍参与换行；
+- `drawImage()` / `clear()` 时重建 `WeakSet`，保证换图片后按新图尺寸重算；
+- 这样**手画标注、API 注入标注、反序列化标注、先有标注后加载图片**，显示结果完全一致；拖拽/改宽/重置对它们同样生效。
+
+**公开 API**：`drawer.refreshTitleLayouts(): void`
+
+- 强制清空缓存并对所有未显式设置的标题重算 + 重绘；
+- 用于业务方**原地修改**了标注坐标 / 字体 / 标题文字后没有走 `setTitle()` 的场景；
+- `enableTitle` 从 false 切到 true 时，下一次 render 的 ensure 会自动补算，也可以主动调用它。
+
+**约定**：
+
+- API 注入的标注如果希望保持自己的位置，传 `titlePositionExplicit: true`（此时只换行，不自动上下/内部兜底）；
+- API 注入的标注可以带 `titlePosition.width` 指定手动宽度，行为与拖拽设置一致；
+- 不需要业务方在每次注入后手动调用 ensure——下一次 `render` 自动完成；`refreshTitleLayouts()` 只是“原地改数据”的显式兜底。
+
+### 9. 导入 API：`setAnnotations` / `addAnnotation`
+
+当前矩形/多边形只能鼠标画，没有对外入口。新增：
+
+```ts
+// 整体替换（导入 / 回填 / 反序列化）；批量只重绘一次
+setAnnotations(annotations: Operate<Rect | Polygon>[]): Operate<Rect | Polygon>[]
+
+// 追加一条；返回带 id 的落库快照
+addAnnotation(annotation: Operate<Rect | Polygon>): Operate<Rect | Polygon> | null
+```
+
+归一化规则（两者共用）：
+
+| 项目 | 规则 |
+| --- | --- |
+| 入参 | 深拷贝，不修改业务对象 |
+| `type` | 只接受 `rect` / `polygon`，其余跳过 |
+| 几何 | `rect` 需要 `data[0]` 且坐标有限；`polygon` 至少 3 个有限顶点 |
+| `id` | 字符串且在当前列表内唯一则保留（与后端对齐）；缺失/重复则 `generateId()` |
+| `status` | 未传或非法 → `'fullfilled'` |
+| `style` | `{ ...getCurrentStyle(), ...annotation.style }`，保留 `titleStyle` / `titlePosition` |
+| 边界 | `clampToImageBounds` 为真且图片已加载时调用 `clampRecordToImageBounds` |
+| 标题 | 保留 `title`；布局由 `ensureTitleLayouts()` 在随后的 render 中补齐 |
+
+行为：
+
+- `setAnnotations`：清空选中与删除历史 → 替换 `recordList` → 重绘一次 → emit **新增**的 `load` 事件；
+- `addAnnotation`：追加 → 清删除历史 → 重绘 → emit `create`（payload 与鼠标画完一致）；
+- 两者都返回落库后的深拷贝快照（带最终 id），业务方可直接用于回填映射；
+- `load` 事件载荷：`{ annotations: Operate<Rect | Polygon>[] }`（深拷贝快照），加入 `DrawerEventMap`。
+
+### 10. 边界情况
 
 | 情况 | 行为 |
 | --- | --- |
@@ -259,6 +329,10 @@ resetAnnotationTitleLayout(ref: number | string): boolean
 | `titleDraggable: false` | 不画把手、不命中标题，行为与 1.3.9 一致 |
 | 锁定标注 | 不可拖动标题 |
 | 图片未加载 | 自动布局跳过；渲染不换行（宽度上限按 Infinity 处理） |
+| API 注入（图片已加载） | 下次 render/export 前补算布局，与手画标注一致 |
+| API 注入（图片未加载） | 图片 onload 后由 `adjustTitlePositions()` 补算 |
+| API 注入且显式位置 | 保留位置，只参与换行 |
+| 原地修改坐标/字体/标题 | 调 `drawer.refreshTitleLayouts()` 强制重算 |
 
 ## 测试策略（TDD）
 
@@ -279,7 +353,19 @@ resetAnnotationTitleLayout(ref: number | string): boolean
    - 拖出图片被 clamp；改宽后行数变化且实时重绘；
    - 未选中点击标题只选中、不移动；`dblclick` 进入编辑；
    - `enableTitleDragging: false` 与锁定标注不响应。
-5. 回归：`npx jest` 全量；`npx tsc --noEmit`；`npx eslint --ext .ts src/`。
+5. API / 外部数据：
+   - 直接 push 带 title 的标注（图片已加载）→ 下次 render 自动得到 `top/inside-top`、`offsetX`，与 `setAnnotationTitle` 结果一致；
+   - 图片加载前 push → onload 后补算；
+   - `titlePositionExplicit: true` 不被改写；
+   - 换图片后重新按新尺寸布局；
+   - `refreshTitleLayouts()` 对原地改数据生效且不重复布局（WeakSet 只算一次）。
+6. 导入 API：
+   - `setAnnotations` 深拷贝、保留唯一 id / 补 id、补 status/style、clamp、替换后只重绘一次、emit `load`；
+   - 非法条目被跳过并返回有效条目；
+   - `addAnnotation` 返回带 id 的快照、emit `create`、追加索引正确；
+   - 导入带 `title` 且标注和图片等高 → render 后 `inside-top`，长标题换行不越界；
+   - `setAnnotations` 清空选中与删除历史。
+7. 回归：`npx jest` 全量；`npx tsc --noEmit`；`npx eslint --ext .ts src/`。
 
 ## 验证命令
 
