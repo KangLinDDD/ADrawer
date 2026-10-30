@@ -85,6 +85,7 @@ interface DrawerOptions {
   textStyle?: Partial<TextStyle>;      // Text style
   enableTitle?: boolean;               // Enable annotation titles (default: false)
   enableTitleEditing?: boolean;        // Allow double-click to edit the title text (default: true)
+  enableTitleDragging?: boolean;       // Allow dragging the title box to resize/move (default: true)
   clampToImageBounds?: boolean;        // Clamp drawing coords to image bounds (default: true)
 }
 ```
@@ -100,6 +101,7 @@ interface DrawerOptions {
 | `textStyle` | `Partial<TextStyle>` | See `TextStyle` | Text annotation style (font, color, background, etc.) |
 | `enableTitle` | `boolean` | `false` | Enable annotation title feature (must be explicitly enabled) |
 | `enableTitleEditing` | `boolean` | `true` | Whether double-clicking a selected annotation opens the title input. Set `false` to make titles read-only in the UI; they can still be set programmatically via `setAnnotationTitle`. Requires `enableTitle: true` |
+| `enableTitleDragging` | `boolean` | `true` | Whether the title box can be dragged after selecting an annotation: drag the right-edge handle to resize (re-wrap live) or drag the box body to move it. Set `false` to disable. Requires `enableTitle: true` |
 | `clampToImageBounds` | `boolean` | `true` | Clamp drawing coordinates (rect/polygon/text) to the image bounds, preventing negative or out-of-range stored coordinates; automatically skipped before the image is loaded. Set `false` to disable |
 
 ### Draw Types
@@ -142,6 +144,16 @@ drawer.deselectAnnotation();
 drawer.deleteSelectedAnnotation();
 drawer.moveSelectedAnnotation(dx, dy);
 
+// Import / restore rectangles and polygons (deep-cloned, ids/styles filled, clamped, titles laid out)
+const saved = drawer.setAnnotations([
+  { type: 'rect', data: [{ start: { x: 10, y: 10 }, width: 100, height: 60 }], status: 'fullfilled', title: 'Person' }
+]);
+const added = drawer.addAnnotation({
+  type: 'polygon',
+  data: [{ point: { x: 10, y: 10 } }, { point: { x: 80, y: 10 } }, { point: { x: 40, y: 80 } }],
+  status: 'fullfilled'
+});
+
 // Get data
 const annotations = drawer.getAnnotations();
 const textAnnotations = drawer.getTextAnnotations();
@@ -181,6 +193,39 @@ drawer.setTextStyle({
 // Update selected annotation's style
 drawer.updateSelectedAnnotationStyle();
 ```
+
+#### Annotation Titles
+
+```typescript
+// Set / get
+drawer.setAnnotationTitle(0, 'A long title that wraps automatically');
+drawer.getAnnotationTitle(0);
+
+// Global style / position
+drawer.setTitleStyle({ font: 'bold 14px Arial', paddingX: 8, paddingY: 4 });
+drawer.setTitlePosition({ vertical: 'top', align: 'center' });
+
+// Per annotation: style / position / manual width (initial-view canvas px)
+drawer.setAnnotationTitleStyle(0, { color: '#FFD700' });
+drawer.setAnnotationTitlePosition(0, { vertical: 'bottom', width: 160 });
+
+// Restore automatic layout (clears manual width / offsets)
+drawer.resetAnnotationTitleLayout(0);
+
+// Force a re-layout after mutating annotation coordinates / font / title text in place
+drawer.refreshTitleLayouts();
+```
+
+Layout rules:
+
+- **Wrap**: outside titles (above/below) are capped at the image width; inside titles are capped at the annotation width. Text wraps by width: CJK per character, Latin preferably at spaces.
+- **Vertical fallback**: try above, then below; when neither fits (e.g. an annotation as tall as the image), the title goes inside the annotation's top edge (`vertical: 'inside-top'`).
+- **No truncation**: all text is drawn. Inside titles grow downward when there is too much text, so nothing is lost.
+- **Manual control**: after selecting an annotation, drag the right-edge handle to change width (live re-wrap) or drag the box body to move it. Manually adjusted titles stop participating in the automatic fallback; call `resetAnnotationTitleLayout()` to restore.
+- **Imported annotations**: `setAnnotations()` / `addAnnotation()` / deserialized records get their title layout computed on the next render; the same applies to records pushed directly into `recordList`.
+- Single-line title box height is unchanged from previous versions.
+
+> `TitlePosition.offsetX / offsetY / width` are in initial-view canvas pixels and are scaled consistently on export.
 
 #### Export
 ```typescript
@@ -270,6 +315,14 @@ const drawer = new Drawer({
 
 // Add events manually when needed
 drawer.addEventListeners();
+
+// Subscribe to annotation changes
+drawer.on('create', ({ id, type, index, data }) => { ... }); // created
+drawer.on('update', ({ id, type, index, data }) => { ... }); // moved / resized / title / style changed
+drawer.on('delete', ({ id, type, index, data }) => { ... }); // deleted
+drawer.on('load', ({ annotations }) => { ... });              // setAnnotations bulk import
+drawer.on('clear', () => { ... });                            // cleared
+drawer.on('undo', () => { ... });                             // undone
 ```
 
 ### TypeScript Support

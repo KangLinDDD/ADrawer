@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [1.3.10] - 2026-10-30
+
+### Added - 标题自动换行、内部兜底与手动拖拽
+
+- **标题按宽度自动换行**：外置标题（上方 / 下方）不超过图片宽，内部标题不超过标注框宽；
+  中文逐字断行、英文优先在空格断行、超长单词按字符硬断。单行标题的框高与旧版本完全一致，
+  现有短标题观感不变。
+- **上下都放不下时落到标注内部顶边**：和图片等高的标注不再把标题画到图片下方
+  （旧实现只写回 `vertical`、渲染时仍按标注下方计算，导出会直接裁掉）。现在按
+  「上 → 下 → `inside-top`」选择并写回。
+- **不截断**：所有文字都会绘制；内部标题文字过多时向下生长，优先保证文字可见。
+- **手动拖拽标题**（`enableTitleDragging`，默认 `true`）：
+  - 选中标注后，右边缘把手可改宽度并实时重新换行；
+  - 拖框体可移动标题位置；拖动过程实时 clamp 在图片内；
+  - 手动调整过的标题标记为显式布局，不再参与自动兜底；
+  - 新增 `resetAnnotationTitleLayout(ref)` 恢复自动布局。
+- **新增 `TitlePosition.width`**：程序化指定标题框宽度（初始显示画布像素）。
+- **新增导入 API**：
+  - `setAnnotations(list)` 整体替换矩形/多边形，返回落库快照，并 emit 新事件 `load`；
+  - `addAnnotation(annotation)` 追加一条，返回带 id 的快照，emit `create`；
+  - 两者都会深拷贝入参、补 id/status/样式、按 `clampToImageBounds` 夹边界。
+- **懒布局兜底**：通过 API / 反序列化直接注入的标注，会在下一次 `render()` / 导出前
+  自动补算一次标题布局（`WeakSet` 去重，缩放不重算）；原地改数据可调用
+  `refreshTitleLayouts()`。
+- 新增 `drawer.on('load', ({ annotations }) => ...)` 事件。
+
+### Fixed
+
+- **连续两次拖拽被误判成双击**：拖拽结束后的 click 会参与双击计数，间隔 < 300ms 的两次拖拽
+  会弹出标题编辑框（实测拖完框体再拖把手就出现输入框）。现在真实拖拽（≥ 3px）结束后的
+  click 会被丢弃并重置计数；原地两次点击标题仍能正常进入编辑。
+
+### Changed
+
+- 选中标注后，标题框会显示虚线边框与右边缘把手（不导出）；未选中时点击标题只选中标注。
+- 双击标题框（不只是标注框）也能进入文字编辑。
+- `setAnnotationTitleStyle()` 修改字号 / padding 后会重新做一次标题边缘布局。
+
+### Tests
+
+- 新增 5 个测试文件、57 条用例：折行纯函数、设置时布局、画布/导出多行渲染、
+  导入 API、拖拽命中/移动/改宽/光标/双击/reset，以及「连续两次拖拽不误触双击编辑」回归。
+- 全量 `npx jest`：33 suites / 624 tests 通过；`npx tsc --noEmit` 通过；`eslint` 0 error。
+
 ## [1.3.9] - 2026-10-27
 
 ### Added - 导出可指定格式与质量

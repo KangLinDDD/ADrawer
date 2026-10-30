@@ -24,7 +24,18 @@ import type {
 } from './types'
 import { deepClone, generateId } from './utils'
 import type { ViewportManager } from './viewport'
-import { getTitleAnchor, computeTitleLayout } from './renderers/title-layout'
+import {
+  getTitleAnchor,
+  computeTitleLayout,
+  computeTitleBox,
+  computeTitleTextLayout,
+  resolveTitleVertical,
+  DEFAULT_TITLE_GAP,
+  DEFAULT_TITLE_PADDING_X,
+  DEFAULT_TITLE_PADDING_Y,
+  UNBOUNDED_TITLE_BOUNDS
+} from './renderers/title-layout'
+import type { TitleTextLayout } from './renderers/title-layout'
 import { parseFontSize } from './renderers/export-scale'
 import type { ShapeStrategy, StrategyStore } from './shapes/shape-strategy'
 import { clampPoint, notifyShapeChange } from './shapes/shared'
@@ -116,6 +127,22 @@ export class AnnotationStore implements StrategyStore {
 
   // 标题文字宽度测量函数（由 Drawer 用 canvas ctx 注入；未注入时设置标题只做垂直边缘判断）
   public measureTitleWidth?: (text: string, font: string) => number
+
+  // 是否允许拖拽标题框（移动 + 改宽）
+  public titleDraggable = true
+
+  // 标题布局是否已按当前图片/视口算过（按对象引用记录，只算一次，避免每帧重算）
+  private titleLayoutSynced = new WeakSet<Operate<Rect | Polygon>>()
+
+  // 标题拖拽状态
+  public isDraggingTitle = false
+  public titleDragPart: 'handle' | 'body' | null = null
+  public titleDragIndex: number | null = null
+  private titleDragStartPointer: Point = { x: 0, y: 0 }
+  private titleDragStartOffsetX = 0
+  private titleDragStartOffsetY = 0
+  private titleDragStartWidth = 0
+  private titleDragMoved = false
 
   // 是否将绘制坐标约束在图片边界内（默认 true，由 DrawerOptions.clampToImageBounds 控制）
   public clampEnabled = true
@@ -443,6 +470,7 @@ export class AnnotationStore implements StrategyStore {
     this.activeHandle = null
     this.originalRect = null
     this.originalPolygon = null
+    this.cancelTitleDrag()
   }
 
   /**
@@ -542,6 +570,7 @@ export class AnnotationStore implements StrategyStore {
     this.deselectAnnotation()
     // 清空删除历史
     this.deleteHistory = []
+    this.titleLayoutSynced = new WeakSet()
   }
 
   /**
@@ -635,20 +664,49 @@ export class AnnotationStore implements StrategyStore {
     }
   }
 
+  /** 标题布局使用的初始显示比例（尺寸不随缩放重算） */
+  private getTitleLayoutScale(): number {
+    const { initialScale, scale } = this.viewport
+    return initialScale > 0 ? initialScale : scale > 0 ? scale : 1
+  }
+
+  /** 初始显示比例下的图片宽度；图片未加载时为 Infinity（不换行） */
+  private getTitleImageWidth(): number {
+    const { originalWidth } = this.viewport
+    return originalWidth > 0 ? originalWidth * this.getTitleLayoutScale() : Infinity
+  }
+
+  /** 绑定字体的测量函数 */
+  private titleMeasureFor(font: string): ((text: string) => number) | null {
+    const measure = this.measureTitleWidth
+    if (!measure) return null
+    return (text: string) => measure(text, font)
+  }
+
+  /** 标题框允许的最小宽度（至少能放下一行字） */
+  private getTitleMinWidth(annotation: Operate<Rect | Polygon>): number {
+    const style = this.getEffectiveTitleStyle(annotation)
+    const fontSize = parseFontSize(style.font || '12px Arial')
+    const paddingX = style.paddingX ?? DEFAULT_TITLE_PADDING_X
+    return Math.max(20, fontSize + paddingX * 2)
+  }
+
   /**
-   * 设置标题时按图片初始显示尺寸自动判断标题位置（翻转优先 + 贴边），并写回标注。
+   * 设置标题时按图片初始显示尺寸自动判断标题位置（上 → 下 → 内部顶边 + 贴边），并写回标注。
    * 规则：显式设置过位置、图片未加载、空多边形时跳过。
    */
   private autoAdjustTitlePosition(annotation: Operate<Rect | Polygon>, title: string): void {
     if (!title || annotation.style?.titlePositionExplicit) return
 
-    const { originalWidth, originalHeight, initialScale, scale } = this.viewport
+    const { originalWidth, originalHeight } = this.viewport
     if (originalWidth <= 0 || originalHeight <= 0) return
 
     const anchorImg = getTitleAnchor(annotation)
     if (!anchorImg) return
 
-    const s = initialScale > 0 ? initialScale : scale > 0 ? scale : 1
+    const s = this.getTitleLayoutScale()
+    const imageWidth = originalWidth * s
+    const imageHeight = originalHeight * s
     const anchor = {
       x: anchorImg.x * s,
       y: anchorImg.y * s,
@@ -658,46 +716,517 @@ export class AnnotationStore implements StrategyStore {
 
     const style = this.getEffectiveTitleStyle(annotation)
     const font = style.font || '12px Arial'
-    const fontSize = parseFontSize(font)
-    const boxHeight = fontSize + (style.paddingY ?? 3) * 2
-
-    const measure = this.measureTitleWidth
-    const bounds = measure
-      ? { minX: 0, minY: 0, maxX: originalWidth * s, maxY: originalHeight * s }
-      : {
-          minX: Number.NEGATIVE_INFINITY,
-          minY: 0,
-          maxX: Number.POSITIVE_INFINITY,
-          maxY: originalHeight * s
-        }
-    const boxWidth = measure ? measure(title, font) + (style.paddingX ?? 6) * 2 : 0
-
+    const paddingX = style.paddingX ?? DEFAULT_TITLE_PADDING_X
+    const paddingY = style.paddingY ?? DEFAULT_TITLE_PADDING_Y
     const base = { ...this.titlePosition }
-    const layout = computeTitleLayout({ anchor, boxWidth, boxHeight, position: base, bounds })
+    // 手动宽度可能来自标注自身（业务注入）或全局默认；自动布局只负责不超出图片
+    const manualWidth = annotation.style?.titlePosition?.width ?? base.width
+    const bounds = { minX: 0, minY: 0, maxX: imageWidth, maxY: imageHeight }
+    const measure = this.titleMeasureFor(font)
+
+    let finalLayout: TitleTextLayout
+    let vertical: 'top' | 'bottom' | 'inside-top'
+
+    if (measure) {
+      const outside = computeTitleTextLayout(title, {
+        font,
+        paddingX,
+        paddingY,
+        vertical: base.vertical,
+        imageWidth,
+        annotationWidth: anchor.width,
+        manualWidth,
+        measure
+      })
+      vertical = resolveTitleVertical({
+        anchor,
+        boxHeight: outside.boxHeight,
+        base: base.vertical,
+        offsetY: base.offsetY,
+        bounds
+      })
+      finalLayout = vertical === 'inside-top'
+        ? computeTitleTextLayout(title, {
+            font,
+            paddingX,
+            paddingY,
+            vertical: 'inside-top',
+            imageWidth,
+            annotationWidth: anchor.width,
+            manualWidth,
+            measure
+          })
+        : outside
+    } else {
+      // 无测量能力时保持旧行为：只做垂直判断、宽度不约束
+      const boxHeight = parseFontSize(font) + paddingY * 2
+      vertical = resolveTitleVertical({
+        anchor,
+        boxHeight,
+        base: base.vertical,
+        offsetY: base.offsetY,
+        bounds: { minX: Number.NEGATIVE_INFINITY, minY: 0, maxX: Number.POSITIVE_INFINITY, maxY: imageHeight }
+      })
+      finalLayout = {
+        lines: [title],
+        lineHeight: Math.max(1, Math.round(parseFontSize(font) * 1.25)),
+        boxWidth: 0,
+        boxHeight,
+        textWidth: 0
+      }
+    }
+
+    const layout = computeTitleLayout({
+      anchor,
+      boxWidth: finalLayout.boxWidth,
+      boxHeight: finalLayout.boxHeight,
+      position: { ...base, vertical },
+      bounds,
+      gap: DEFAULT_TITLE_GAP
+    })
 
     if (!annotation.style) {
       annotation.style = this.getCurrentStyle()
     }
     annotation.style.titlePosition = {
       ...base,
+      ...(manualWidth != null && manualWidth > 0 ? { width: manualWidth } : {}),
       vertical: layout.vertical,
       align: layout.align,
       offsetX: layout.offsetX
     }
+    this.titleLayoutSynced.add(annotation)
+  }
+
+  /**
+   * 绘制前保证标题布局已计算过（懒布局）。
+   *
+   * 覆盖「业务方直接塞 recordList / 反序列化」等没有走 setTitle 的入口：
+   * 每个标注对象只算一次，缩放/拖动时不会每帧重算。
+   */
+  public ensureTitleLayouts(): void {
+    if (this.viewport.originalWidth <= 0 || this.viewport.originalHeight <= 0) return
+    this.recordList.forEach((annotation) => {
+      if (!annotation.title || annotation.style?.titlePositionExplicit) return
+      if (this.titleLayoutSynced.has(annotation)) return
+      this.autoAdjustTitlePosition(annotation, annotation.title)
+    })
   }
 
   /**
    * 图片加载完成后，对所有「未显式设置位置」的标题补做一次边缘判断。
-   * 用于图片尚未加载时就通过 API 设置了标题的场景。
+   * 同时清空懒布局缓存，换图后按新尺寸重算。
    */
   public adjustTitlePositions(): void {
     if (this.viewport.originalWidth <= 0 || this.viewport.originalHeight <= 0) return
+    this.titleLayoutSynced = new WeakSet()
     this.recordList.forEach((annotation) => {
       if (annotation.title && !annotation.style?.titlePositionExplicit) {
         this.autoAdjustTitlePosition(annotation, annotation.title)
       }
     })
   }
+
+  /** 强制重算全部未显式设置的标题布局并重绘 */
+  public refreshTitleLayouts(): void {
+    this.adjustTitlePositions()
+    this.renderCallback?.()
+  }
+
+  /**
+   * 整体替换矩形/多边形标注（导入 / 回填 / 反序列化）。
+   * 归一化后落库，并返回深拷贝快照。
+   */
+  public setAnnotations(input: Operate<Rect | Polygon>[]): Operate<Rect | Polygon>[] {
+    const ids = new Set<string>()
+    const records = this.normalizeImportedAnnotations(input, ids)
+    this.recordList = records
+    this.deselectAnnotation()
+    this.deleteHistory = []
+    this.titleLayoutSynced = new WeakSet()
+    this.ensureTitleLayouts()
+    return this.getAnnotations()
+  }
+
+  /**
+   * 追加一条矩形/多边形标注；返回落库后的深拷贝快照，非法数据返回 null。
+   */
+  public addAnnotation(input: Operate<Rect | Polygon>): Operate<Rect | Polygon> | null {
+    const ids = new Set<string>()
+    this.recordList.forEach((record) => {
+      if (record.id) ids.add(record.id)
+    })
+    const records = this.normalizeImportedAnnotations([input], ids)
+    const record = records[0]
+    if (!record) return null
+
+    this.recordList.push(record)
+    this.deleteHistory = []
+    this.ensureTitleLayouts()
+    this.notifyChange('create', this.recordList.length - 1, record)
+    return deepClone(record)
+  }
+
+  /** 导入数据归一化：类型/几何校验、id、status、样式、边界 */
+  private normalizeImportedAnnotations(
+    input: Operate<Rect | Polygon>[],
+    ids: Set<string>
+  ): Operate<Rect | Polygon>[] {
+    if (!Array.isArray(input)) return []
+    const result: Operate<Rect | Polygon>[] = []
+    input.forEach((raw) => {
+      const record = this.normalizeImportedAnnotation(raw, ids)
+      if (record) result.push(record)
+    })
+    return result
+  }
+
+  private normalizeImportedAnnotation(
+    raw: Operate<Rect | Polygon>,
+    ids: Set<string>
+  ): Operate<Rect | Polygon> | null {
+    if (!raw || (raw.type !== 'rect' && raw.type !== 'polygon')) return null
+
+    const clone = deepClone(raw)
+    const type = clone.type as 'rect' | 'polygon'
+
+    if (type === 'rect') {
+      const rect = clone.data?.[0] as Rect | undefined
+      if (
+        !rect ||
+        !Number.isFinite(rect.start?.x) ||
+        !Number.isFinite(rect.start?.y) ||
+        !Number.isFinite(rect.width) ||
+        !Number.isFinite(rect.height)
+      ) {
+        return null
+      }
+    } else {
+      const points = clone.data as Polygon[]
+      if (
+        !Array.isArray(points) ||
+        points.length < 3 ||
+        !points.every(
+          (p) => p?.point && Number.isFinite(p.point.x) && Number.isFinite(p.point.y)
+        )
+      ) {
+        return null
+      }
+    }
+
+    const id =
+      typeof clone.id === 'string' && clone.id.length > 0 && !ids.has(clone.id)
+        ? clone.id
+        : generateId()
+    ids.add(id)
+
+    const record: Operate<Rect | Polygon> = {
+      ...clone,
+      id,
+      type,
+      status: 'fullfilled',
+      style: { ...this.getCurrentStyle(), ...(clone.style || {}) }
+    }
+    this.clampRecordToImageBounds(record)
+    return record
+  }
+
+  /**
+   * 计算标注标题的完整渲染数据（画布坐标）。
+   * 渲染与命中检测共用，避免「看到的位置点不中」。
+   */
+  public computeTitleRenderData(
+    annotation: Operate<Rect | Polygon>,
+    measureOverride?: (text: string, font: string) => number
+  ): {
+    layout: TitleTextLayout
+    x: number
+    y: number
+    vertical: 'top' | 'bottom' | 'inside-top'
+    font: string
+    paddingX: number
+    paddingY: number
+  } | null {
+    if (!annotation.title) return null
+
+    const { originalHeight } = this.viewport
+    const anchor = getTitleAnchor(annotation, this.viewport)
+    const anchorImg = getTitleAnchor(annotation)
+    if (!anchor || !anchorImg) return null
+
+    const style = this.getEffectiveTitleStyle(annotation)
+    const pos = this.getEffectiveTitlePosition(annotation)
+    const vertical = pos.vertical || 'top'
+    const font = style.font || '12px Arial'
+    const measureFn = measureOverride || this.measureTitleWidth
+    if (!measureFn) return null
+
+    const paddingX = style.paddingX ?? DEFAULT_TITLE_PADDING_X
+    const paddingY = style.paddingY ?? DEFAULT_TITLE_PADDING_Y
+    const s = this.getTitleLayoutScale()
+    const measure = (text: string) => measureFn(text, font)
+
+    const layout = computeTitleTextLayout(annotation.title, {
+      font,
+      paddingX,
+      paddingY,
+      vertical,
+      imageWidth: this.getTitleImageWidth(),
+      annotationWidth: anchorImg.width * s,
+      manualWidth: pos.width,
+      measure
+    })
+
+    const box = computeTitleBox({
+      anchor,
+      boxWidth: layout.boxWidth,
+      boxHeight: layout.boxHeight,
+      position: { ...pos, vertical },
+      gap: DEFAULT_TITLE_GAP
+    })
+    const x = box.x
+    let y = box.y
+
+    // 内部标题向下生长，若超出图片底边则整体上移（不截断文字）
+    if (vertical === 'inside-top' && originalHeight > 0) {
+      const imageTop = this.viewport.offset.y
+      const imageBottom = imageTop + originalHeight * this.viewport.scale
+      const maxY = imageBottom - layout.boxHeight
+      if (maxY >= imageTop) y = Math.min(Math.max(y, imageTop), maxY)
+    }
+
+    return { layout, x, y, vertical, font, paddingX, paddingY }
+  }
+
+  /** 标题框在画布上的矩形（命中检测 / 测试用） */
+  public getTitleBoxRect(
+    index: number,
+    measureOverride?: (text: string, font: string) => number
+  ): { x: number; y: number; width: number; height: number } | null {
+    const annotation = this.recordList[index]
+    if (!annotation?.title) return null
+    const data = this.computeTitleRenderData(annotation, measureOverride)
+    if (!data) return null
+    return {
+      x: data.x,
+      y: data.y,
+      width: data.layout.boxWidth,
+      height: data.layout.boxHeight
+    }
+  }
+
+  /**
+   * 命中标题框（从后往前，后画的优先）。
+   * `part=handle` 仅对已选中的标注返回；未选中的标题只用于「点击选中」。
+   */
+  public hitTestTitle(
+    canvasX: number,
+    canvasY: number
+  ): { index: number; part: 'handle' | 'body' } | null {
+    if (!this.titleDraggable) return null
+
+    for (let index = this.recordList.length - 1; index >= 0; index--) {
+      const annotation = this.recordList[index]
+      if (!annotation?.title) continue
+      const box = this.getTitleBoxRect(index)
+      if (!box) continue
+      if (
+        canvasX < box.x ||
+        canvasX > box.x + box.width ||
+        canvasY < box.y ||
+        canvasY > box.y + box.height
+      ) {
+        continue
+      }
+      const handleWidth = Math.min(8, box.width)
+      const isSelected = this.selectedAnnotation?.index === index
+      return {
+        index,
+        part: isSelected && canvasX >= box.x + box.width - handleWidth ? 'handle' : 'body'
+      }
+    }
+    return null
+  }
+
+
+  /**
+   * 开始拖拽标题框（移动框体 / 拖右边缘改宽）
+   */
+  public startTitleDrag(
+    part: 'handle' | 'body',
+    index: number,
+    pointer: Point
+  ): boolean {
+    if (!this.titleDraggable) return false
+    if (this.selectedAnnotation?.index !== index) return false
+    if (this.selectedAnnotation.locked === true) return false
+
+    const annotation = this.recordList[index]
+    if (!annotation?.title) return false
+    const pos = this.getEffectiveTitlePosition(annotation)
+    const box = this.getTitleBoxRect(index)
+    if (!box) return false
+
+    this.isDraggingTitle = true
+    this.titleDragPart = part
+    this.titleDragIndex = index
+    this.titleDragStartPointer = { ...pointer }
+    this.titleDragStartOffsetX = pos.offsetX ?? 0
+    this.titleDragStartOffsetY = pos.offsetY ?? 0
+    this.titleDragStartWidth = pos.width ?? box.width
+    this.titleDragMoved = false
+    return true
+  }
+
+  /**
+   * 更新标题拖拽（pointer 为画布坐标）；返回是否产生了有效位移。
+   * 位移按画布像素 1:1 应用，再统一夹回图片边界。
+   */
+  public updateTitleDrag(pointer: Point): boolean {
+    if (!this.isDraggingTitle || this.titleDragIndex === null) return false
+
+    const annotation = this.recordList[this.titleDragIndex]
+    if (!annotation?.title) {
+      this.finishTitleDrag()
+      return false
+    }
+
+    const dx = pointer.x - this.titleDragStartPointer.x
+    const dy = pointer.y - this.titleDragStartPointer.y
+    // 过滤双击/点击时的抖动，避免“双击编辑”把标题挪动
+    if (!this.titleDragMoved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return false
+    this.titleDragMoved = true
+
+    if (!annotation.style) annotation.style = this.getCurrentStyle()
+    if (!annotation.style.titlePosition) {
+      annotation.style.titlePosition = { ...this.getEffectiveTitlePosition(annotation) }
+    }
+    const pos = annotation.style.titlePosition
+
+    if (this.titleDragPart === 'handle') {
+      const maxWidth = this.getTitleImageWidth()
+      pos.width = Math.min(
+        Math.max(this.titleDragStartWidth + dx, this.getTitleMinWidth(annotation)),
+        maxWidth
+      )
+    } else {
+      pos.offsetX = this.titleDragStartOffsetX + dx
+      pos.offsetY = this.titleDragStartOffsetY + dy
+    }
+    // 手动调整后不再参与自动上下/内部兜底
+    annotation.style.titlePositionExplicit = true
+    this.clampTitleOffsets(annotation)
+    return true
+  }
+
+  /** 结束标题拖拽并上报 update；返回本次是否有实际位移 */
+  public finishTitleDrag(): boolean {
+    const changed = this.titleDragMoved
+    const index = this.titleDragIndex
+    this.isDraggingTitle = false
+    this.titleDragPart = null
+    this.titleDragIndex = null
+    this.titleDragMoved = false
+    if (changed && index !== null) {
+      this.notifyUpdate(index)
+      this.renderCallback?.()
+    }
+    return changed
+  }
+
+  private cancelTitleDrag(): void {
+    this.isDraggingTitle = false
+    this.titleDragPart = null
+    this.titleDragIndex = null
+    this.titleDragMoved = false
+  }
+
+  /**
+   * 把标题框整体夹回图片内（初始显示坐标系），再反推 offsetX/offsetY。
+   * 手动移动/改宽后调用，保证任意缩放下都不出图。
+   */
+  private clampTitleOffsets(annotation: Operate<Rect | Polygon>): void {
+    const pos = annotation.style?.titlePosition
+    if (!pos || !annotation.title) return
+
+    const anchorImg = getTitleAnchor(annotation)
+    if (!anchorImg) return
+
+    const style = this.getEffectiveTitleStyle(annotation)
+    const font = style.font || '12px Arial'
+    const measure = this.titleMeasureFor(font)
+    if (!measure) return
+
+    const s = this.getTitleLayoutScale()
+    const imageWidth = this.getTitleImageWidth()
+    const { originalHeight } = this.viewport
+    const imageHeight = originalHeight > 0 ? originalHeight * s : Infinity
+    const anchor = {
+      x: anchorImg.x * s,
+      y: anchorImg.y * s,
+      width: anchorImg.width * s,
+      height: anchorImg.height * s
+    }
+    const vertical = pos.vertical || this.titlePosition.vertical || 'top'
+    const paddingX = style.paddingX ?? DEFAULT_TITLE_PADDING_X
+    const paddingY = style.paddingY ?? DEFAULT_TITLE_PADDING_Y
+
+    const layout = computeTitleTextLayout(annotation.title, {
+      font,
+      paddingX,
+      paddingY,
+      vertical,
+      imageWidth,
+      annotationWidth: anchor.width,
+      manualWidth: pos.width,
+      measure
+    })
+
+    const base = { ...pos, vertical }
+    const raw = computeTitleBox({
+      anchor,
+      boxWidth: layout.boxWidth,
+      boxHeight: layout.boxHeight,
+      position: base,
+      bounds: UNBOUNDED_TITLE_BOUNDS,
+      gap: DEFAULT_TITLE_GAP
+    })
+    const raw0 = computeTitleBox({
+      anchor,
+      boxWidth: layout.boxWidth,
+      boxHeight: layout.boxHeight,
+      position: { ...base, offsetX: 0, offsetY: 0 },
+      bounds: UNBOUNDED_TITLE_BOUNDS,
+      gap: DEFAULT_TITLE_GAP
+    })
+
+    const maxX = Number.isFinite(imageWidth) ? Math.max(0, imageWidth - layout.boxWidth) : raw.x
+    const maxY = Number.isFinite(imageHeight) ? Math.max(0, imageHeight - layout.boxHeight) : raw.y
+    const x = Math.min(Math.max(raw.x, 0), maxX)
+    const y = Math.min(Math.max(raw.y, 0), maxY)
+    pos.offsetX = x - raw0.x
+    pos.offsetY = y - raw0.y
+  }
+
+  /**
+   * 清除手动宽度/位置，恢复自动换行与自动上下/内部兜底
+   */
+  public resetAnnotationTitleLayout(ref: number | string): boolean {
+    const index = this.resolveIndex(ref)
+    if (index < 0 || index >= this.recordList.length) return false
+    const annotation = this.recordList[index]
+    if (!annotation) return false
+
+    if (annotation.style) {
+      delete annotation.style.titlePosition
+      annotation.style.titlePositionExplicit = false
+    }
+    this.titleLayoutSynced.delete(annotation)
+    if (annotation.title) this.autoAdjustTitlePosition(annotation, annotation.title)
+    this.notifyUpdate(index)
+    return true
+  }
+
 
   /**
    * 单独修改某个标注的标题样式（不影响全局默认）
@@ -714,6 +1243,16 @@ export class AnnotationStore implements StrategyStore {
     annotation.style.titleStyle = {
       ...(annotation.style.titleStyle || this.titleStyle),
       ...style
+    }
+    // 字号 / padding 变了，标题框尺寸跟着变，需要重新做一次边缘判断
+    if (annotation.title) {
+      if (annotation.style.titlePositionExplicit) {
+        // 手动布局不重新选上/下/内部，但尺寸变化后仍要保证不出图
+        this.clampTitleOffsets(annotation)
+      } else {
+        this.titleLayoutSynced.delete(annotation)
+        this.autoAdjustTitlePosition(annotation, annotation.title)
+      }
     }
     this.notifyUpdate(index)
     return true
@@ -798,8 +1337,12 @@ export class AnnotationStore implements StrategyStore {
     // 设置非空标题时，将当前全局样式快照存入标注，保证后续全局修改不影响已有标题
     if (title) {
       this.captureTitleStyleSnapshot(annotation)
-      // 按图片初始尺寸自动判断是否靠边，并写回位置
-      this.autoAdjustTitlePosition(annotation, title)
+      // 按图片初始尺寸自动判断是否靠边，并写回位置；显式布局保留位置，但编辑文字后仍需夹回图内
+      if (annotation.style?.titlePositionExplicit) {
+        this.clampTitleOffsets(annotation)
+      } else {
+        this.autoAdjustTitlePosition(annotation, title)
+      }
     }
     this.notifyUpdate(index)
     return true
@@ -876,8 +1419,12 @@ export class AnnotationStore implements StrategyStore {
       // 设置非空标题时，将当前全局样式快照存入标注
       if (newTitle) {
         this.captureTitleStyleSnapshot(annotation)
-        // 按图片初始尺寸自动判断是否靠边，并写回位置
-        this.autoAdjustTitlePosition(annotation, newTitle)
+        // 按图片初始尺寸自动判断是否靠边，并写回位置；显式布局保留位置，但编辑文字后仍需夹回图内
+        if (annotation.style?.titlePositionExplicit) {
+          this.clampTitleOffsets(annotation)
+        } else {
+          this.autoAdjustTitlePosition(annotation, newTitle)
+        }
       }
       this.notifyUpdate(index)
       // 重新选中标注

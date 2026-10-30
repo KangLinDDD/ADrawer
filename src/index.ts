@@ -142,7 +142,7 @@ export class Drawer {
   public drawType: DrawType = ""
 
   constructor(options: DrawerOptions) {
-    const { drawType, useEvents = true, id = "container", annotationColor, lineStyle, vertexStyle, textStyle, enableTitle = false, enableTitleEditing = true, clampToImageBounds = true } = options
+    const { drawType, useEvents = true, id = "container", annotationColor, lineStyle, vertexStyle, textStyle, enableTitle = false, enableTitleEditing = true, enableTitleDragging = true, clampToImageBounds = true } = options
 
     // 获取容器
     const container = document.getElementById(id)
@@ -204,6 +204,7 @@ export class Drawer {
     // 设置标题功能启用状态（默认 false）
     this.annotationManager.enableTitle = enableTitle
     this.annotationManager.titleEditable = enableTitleEditing
+    this.annotationManager.titleDraggable = enableTitleDragging
     if (enableTitle) {
       this.annotationManager.initTitleSupport()
     }
@@ -402,9 +403,24 @@ export class Drawer {
       if (this.eventHandler.isDragging || 
           this.annotationManager.isMovingAnnotation || 
           this.annotationManager.isResizing || 
+          this.annotationManager.isDraggingTitle ||
           this.textManager.isTextMoving) {
         return
       }
+
+      // 真实拖拽结束后的 click 直接丢弃，并重置双击计数：
+      // 否则连续两次拖拽（两次 click 间隔 < 300ms）会被误判成双击，意外进入标题编辑
+      if (this.eventHandler.suppressClickUntil > Date.now()) {
+        this.eventHandler.suppressClickUntil = 0
+        this.eventHandler.justFinishedMove = false
+        clickCount = 0
+        if (clickTimeout !== null) {
+          clearTimeout(clickTimeout)
+          clickTimeout = null
+        }
+        return
+      }
+      this.eventHandler.suppressClickUntil = 0
 
       // 检查是否需要跳过这次点击
       const shouldSkip = this.eventHandler.justFinishedMove
@@ -631,6 +647,49 @@ export class Drawer {
    */
   public setAnnotationTitlePosition(index: number | string, position: Partial<TitlePosition>): boolean {
     const result = this.annotationManager.setAnnotationTitlePosition(index, position)
+    if (result) this.render()
+    return result
+  }
+
+  /**
+   * 强制重算所有「未显式设置位置」的标题布局并重绘。
+   *
+   * 适用于业务方原地修改了标注坐标、标题文案或字体、但没有走 `setTitle()` 的场景。
+   * 通过 `setAnnotations()` / `addAnnotation()` 导入的标注会在下一次渲染时自动补算，无需调用。
+   */
+  public refreshTitleLayouts(): void {
+    this.annotationManager.refreshTitleLayouts()
+  }
+
+  /**
+   * 清除某个标注标题的手动宽度/位置，恢复自动换行与自动上下/内部兜底
+   * @param index - 标注索引或标注 id
+   */
+  public resetAnnotationTitleLayout(index: number | string): boolean {
+    const result = this.annotationManager.resetAnnotationTitleLayout(index)
+    if (result) this.render()
+    return result
+  }
+
+  /**
+   * 整体替换矩形/多边形标注（导入 / 回填 / 反序列化）。
+   *
+   * - 深拷贝入参，缺 id 自动生成，保留唯一 id；
+   * - 补 status / 样式快照，并按 `clampToImageBounds` 夹回图片；
+   * - 有标题的标注会自动布局；随后重绘并 emit `load` 事件。
+   */
+  public setAnnotations(annotations: Operate<Rect | Polygon>[]): Operate<Rect | Polygon>[] {
+    const result = this.annotationManager.setAnnotations(annotations)
+    this.render()
+    this.emitter.emit('load', { annotations: result })
+    return result
+  }
+
+  /**
+   * 追加一条矩形/多边形标注；返回落库后的快照，非法数据返回 null。
+   */
+  public addAnnotation(annotation: Operate<Rect | Polygon>): Operate<Rect | Polygon> | null {
+    const result = this.annotationManager.addAnnotation(annotation)
     if (result) this.render()
     return result
   }

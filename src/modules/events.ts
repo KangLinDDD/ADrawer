@@ -18,6 +18,13 @@ export class EventHandler {
 
   // 防止移动/调整大小后触发 click 绘制
   public justFinishedMove = false
+
+  // 本次手势是否真的发生了位移（没有位移的点击仍要能组成双击）
+  public gestureMoved = false
+  private gestureStart: Point = { x: 0, y: 0 }
+
+  // 位移结束后丢弃紧随其后的 click（只在这个时间点之前有效），避免两次拖拽被误判成双击
+  public suppressClickUntil = 0
   
   // 防止取消选中后触发 click 绘制
   public justDeselected = false
@@ -84,6 +91,32 @@ export class EventHandler {
 
     const drawType = this.getDrawType()
     const bgImage = this.getBgImage()
+    this.gestureMoved = false
+    this.gestureStart = { x: e.clientX, y: e.clientY }
+
+    // 标题框优先：命中已选中标注 → 拖拽标题；命中未选中标注 → 选中它（不开始绘制）
+    const titleHit = this.annotationManager.hitTestTitle(e.offsetX, e.offsetY)
+    if (titleHit) {
+      const selected = this.annotationManager.selectedAnnotation
+      if (selected && selected.index === titleHit.index) {
+        if (selected.locked !== true) {
+          this.annotationManager.startTitleDrag(titleHit.part, titleHit.index, {
+            x: e.offsetX,
+            y: e.offsetY
+          })
+          this.canvas.style.cursor = titleHit.part === 'handle' ? 'ew-resize' : 'move'
+          this.renderCallback()
+        }
+        return
+      }
+
+      defaultShapeRegistry.selectShapeExclusive(this.annotationManager, this.textManager, {
+        kind: 'shape',
+        ref: titleHit.index
+      })
+      this.renderCallback()
+      return
+    }
 
     // 优先处理：如果有选中的标注，检查是否点击了控制点
     if (this.annotationManager.selectedAnnotation && bgImage) {
@@ -486,12 +519,23 @@ export class EventHandler {
       const dy = e.clientY - this.dragStart.y
       this.viewport.updateOffset(dx, dy)
       this.dragStart = { x: e.clientX, y: e.clientY }
+      this.markGestureMoved(e)
       this.renderCallback()
+      return
+    }
+
+    // 处理标题拖拽
+    if (this.annotationManager.isDraggingTitle) {
+      this.markGestureMoved(e)
+      if (this.annotationManager.updateTitleDrag({ x: e.offsetX, y: e.offsetY })) {
+        this.renderCallback()
+      }
       return
     }
 
     // 处理文本移动
     if (this.textManager.isTextMoving && this.textManager.movingTextIndex !== null) {
+      this.markGestureMoved(e)
       if (this.textManager.moveAnnotation(e)) {
         this.renderCallback()
       }
@@ -527,10 +571,23 @@ export class EventHandler {
     }
   }
 
+  /** 位移超过 3px 才算“拖动”，避免点击时的轻微抖动吞掉双击 */
+  private markGestureMoved(e: MouseEvent): void {
+    if (this.gestureMoved) return
+    if (
+      Math.abs(e.clientX - this.gestureStart.x) >= 3 ||
+      Math.abs(e.clientY - this.gestureStart.y) >= 3
+    ) {
+      this.gestureMoved = true
+    }
+  }
+
   /**
    * 处理标注移动或调整大小
    */
   private handleAnnotationMove(e: MouseEvent): void {
+    this.markGestureMoved(e)
+
     // 处理调整大小
     if (this.annotationManager.isResizing && this.annotationManager.activeHandle) {
       const imgCoords = this.viewport.toImageCoordinates(e.offsetX, e.offsetY)
@@ -570,6 +627,23 @@ export class EventHandler {
    */
   private updateCursor(e: MouseEvent): void {
     const drawType = this.getDrawType()
+
+    // 标题框优先：已选中 → 移动/改宽光标；未选中 → 可点击选中
+    const titleHit = this.annotationManager.hitTestTitle(e.offsetX, e.offsetY)
+    if (titleHit) {
+      const selected = this.annotationManager.selectedAnnotation
+      if (selected && selected.index === titleHit.index) {
+        this.canvas.style.cursor =
+          selected.locked === true
+            ? "default"
+            : titleHit.part === "handle"
+              ? "ew-resize"
+              : "move"
+      } else {
+        this.canvas.style.cursor = "pointer"
+      }
+      return
+    }
 
     // 文本模式
     if (drawType === "text") {
@@ -753,15 +827,25 @@ export class EventHandler {
    * 处理鼠标释放
    */
   handleMouseUp(_e: MouseEvent): void {
+    if (this.annotationManager.isDraggingTitle) {
+      const changed = this.annotationManager.finishTitleDrag()
+      this.justFinishedMove = changed
+      if (changed) this.suppressClickUntil = Date.now() + 400
+      this.canvas.style.cursor = this.annotationManager.selectedAnnotation ? "move" : "default"
+      return
+    }
+
     if (this.isDragging) {
       this.isDragging = false
+      if (this.gestureMoved) this.suppressClickUntil = Date.now() + 400
       const drawType = this.getDrawType()
       this.canvas.style.cursor = drawType === "drag" ? "grab" : "default"
       return
     }
 
     if (this.textManager.isTextMoving) {
-      this.justFinishedMove = true
+      this.justFinishedMove = this.gestureMoved
+      if (this.gestureMoved) this.suppressClickUntil = Date.now() + 400
       this.textManager.finishMoving()
       const drawType = this.getDrawType()
       if (drawType === "drag") {
@@ -776,7 +860,8 @@ export class EventHandler {
 
     // 结束标注移动或调整大小
     if (this.annotationManager.isMovingAnnotation || this.annotationManager.isResizing) {
-      this.justFinishedMove = true
+      this.justFinishedMove = this.gestureMoved
+      if (this.gestureMoved) this.suppressClickUntil = Date.now() + 400
       this.annotationManager.finishMovingAnnotation()
       this.canvas.style.cursor = this.annotationManager.selectedAnnotation ? "move" : "default"
     }
@@ -793,7 +878,8 @@ export class EventHandler {
    */
   handleMouseLeave(e: MouseEvent): void {
     if (this.isDragging || this.textManager.isTextMoving || 
-        this.annotationManager.isResizing || this.annotationManager.isMovingAnnotation) {
+        this.annotationManager.isResizing || this.annotationManager.isMovingAnnotation ||
+        this.annotationManager.isDraggingTitle) {
       this.handleMouseUp(e)
     }
     // 不再自动取消选中状态
@@ -813,6 +899,15 @@ export class EventHandler {
     if (textIndex !== null) {
       this.textManager.startEditing(textIndex)
       return
+    }
+
+    // 双击标题框：标题可能画在标注框外，按标题矩形命中
+    if (this.annotationManager.titleEditable) {
+      const titleHit = this.annotationManager.hitTestTitle(e.offsetX, e.offsetY)
+      if (titleHit) {
+        this.annotationManager.startTitleEditing(titleHit.index)
+        return
+      }
     }
 
     // 如果双击了选中的标注（矩形/多边形），触发标题编辑

@@ -72,10 +72,12 @@ export type TitlePosition = {
   vertical?: 'top' | 'bottom' | 'inside-top'
   /** 水平对齐：left/center/right */
   align?: 'left' | 'center' | 'right'
-  /** 水平偏移（像素，图像坐标） */
+  /** 水平偏移（画布像素，初始显示比例） */
   offsetX?: number
-  /** 垂直偏移（像素，图像坐标） */
+  /** 垂直偏移（画布像素，初始显示比例） */
   offsetY?: number
+  /** 手动标题框宽度（画布像素，初始显示比例）；缺省为按文字自动贴合 */
+  width?: number
 }
 
 /** 标注样式 */
@@ -132,6 +134,14 @@ export type DrawerOptions = {
    * 适合「文字由业务决定、不允许手改」的场景（如自动生成的时间戳、按下拉生成的标题）。
    */
   enableTitleEditing?: boolean
+  /**
+   * 是否允许用户拖拽标题框（默认 true，需 `enableTitle: true`）
+   *
+   * - 拖右边缘把手：改标题宽度并实时重新换行；
+   * - 拖标题框体：移动标题位置；
+   * - 手动调整后该标题不再参与自动边缘兜底，可用 `resetAnnotationTitleLayout()` 恢复。
+   */
+  enableTitleDragging?: boolean
   /** 是否将绘制坐标约束在图片边界内（默认 true，图片未加载时自动跳过） */
   clampToImageBounds?: boolean
 }
@@ -262,6 +272,8 @@ export type DrawerEventMap = {
   update: ShapeChangePayload
   /** 清空所有标注 */
   clear: undefined
+  /** 批量导入标注（setAnnotations） */
+  load: { annotations: Operate<Rect | Polygon>[] }
   /** 撤销成功 */
   undo: undefined
 }

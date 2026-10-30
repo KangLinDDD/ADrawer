@@ -1,7 +1,7 @@
 # 标注标题换行与手动拖拽布局 设计文档
 
 - 日期：2026-10-30
-- 状态：待评审
+- 状态：已实现（v1.3.10）
 - 关联：建立在 2026-10-09「标注标题设置时边缘自适应」之上
 - 相关文件：`src/modules/renderers/title-layout.ts`、`src/modules/renderer.ts`、`src/modules/annotation-store.ts`、`src/modules/events.ts`、`src/modules/types.ts`、`src/index.ts`
 
@@ -208,19 +208,22 @@ hitTestTitle(canvasX: number, canvasY: number): {
 | `dblclick` | 命中标题框时进入文字编辑（优先于“双击标注框”）；`titleEditable` 为假时跳过 |
 | `click` | 拖拽结束后的 click 跳过（加入 `isDraggingTitle` 守卫） |
 
-拖拽数学：
+拖拽数学（画布像素 1:1，保证光标跟手）：
 
 ```
-ds = s / scale                    // 画布像素增量 → 初始比例画布像素
-offsetX' = startOffsetX + dx * ds
-offsetY' = startOffsetY + dy * ds
-width'   = startWidth + dx * ds
+offsetX' = startOffsetX + dx
+offsetY' = startOffsetY + dy
+width'   = startWidth + dx
 ```
 
-- 移动/改宽后，用**初始比例坐标系**把盒子 clamp 在图片内，再反推 `offsetX/offsetY`（保证任意缩放下都不出图）。
+- 标题框尺寸本身就是画布像素、不随缩放变，因此位移不做倍率换算，把手/框体与光标 1:1；
+- 移动/改宽后，在**初始显示比例的图片矩形**里 clamp 盒子，再反推 `offsetX/offsetY`：
+  初始视图下合法 ⇒ 任意放大后也合法（图片只会更大）。
 - 宽度下限：`max(fontSize + 2*paddingX, 20)`；上限：图片宽。
-- 拖动过程中**不**改 `vertical`；`dblclick` 无位移时不算手动调整。
-- 首次发生实际位移时置 `titlePositionExplicit = true`（移动与改宽都算），此后不再自动兜底。
+- 拖动过程中**不**改 `vertical`；位移 < 3px 视为点击，不标记显式、不吞掉双击。
+- 首次发生实际位移（≥ 3px）时置 `titlePositionExplicit = true`（移动与改宽都算），此后不再自动兜底。
+- 真实拖拽结束后的 click 会被丢弃并重置双击计数（`suppressClick`）：
+  否则连续两次拖拽（间隔 < 300ms）会被浏览器的 click 合成逻辑误判成双击，意外弹出标题编辑框。
 - 拖拽结束（移动）或拖拽过程中（改宽）按新尺寸重排；`mouseup` 时 emit `update`。
 
 ### 7. 数据模型与 API
@@ -381,7 +384,7 @@ npx eslint --ext .ts src/
 | --- | --- |
 | 标题命中与形状拖拽冲突 | 标题优先；未选中标注只选中不拖拽；锁定态禁用 |
 | 内部标题遮挡标注 | 只在选中时显示把手；标注仍可从边框/其他区域拖动 |
-| 缩放后手动标题相对标注漂移 | 所有增量按 `initialScale / scale` 换算，存储统一用初始比例画布像素 |
+| 缩放后手动标题相对标注漂移 | 偏移/宽度按画布像素 1:1 存储，clamp 用初始显示比例的图片矩形；手动位置属于屏幕空间，缩放后可用 reset 恢复自动 |
 | 折行在画布与导出不一致 | 两端共用 `layoutTitleText`；导出按同一套倍率换算后重算 |
 | 长文本折行性能 | 按字符宽度累加断行（O(n)），每行结束后再精确测量一次 |
 | 默认开启拖拽改变既有交互 | 仅在 `enableTitle: true` 且命中标题时生效；提供 `enableTitleDragging: false` 关闭 |

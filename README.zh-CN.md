@@ -85,6 +85,7 @@ interface DrawerOptions {
   textStyle?: Partial<TextStyle>;      // 文本样式
   enableTitle?: boolean;               // 启用标注标题功能（默认：false）
   enableTitleEditing?: boolean;        // 是否允许双击编辑标题文字（默认：true）
+  enableTitleDragging?: boolean;       // 是否允许拖拽标题框改宽/移动（默认：true）
   clampToImageBounds?: boolean;        // 绘制坐标约束在图片边界内（默认：true）
 }
 ```
@@ -100,6 +101,7 @@ interface DrawerOptions {
 | `textStyle` | `Partial<TextStyle>` | 见 `TextStyle` | 文本标注样式（字体、颜色、背景等） |
 | `enableTitle` | `boolean` | `false` | 启用标注标题功能（需显式开启） |
 | `enableTitleEditing` | `boolean` | `true` | 双击已选中的标注是否弹出标题输入框。传 `false` 可让标题在界面上只读，仍可用 `setAnnotationTitle` 程序设置。需 `enableTitle: true` |
+| `enableTitleDragging` | `boolean` | `true` | 选中标注后是否允许拖拽标题框：拖右边缘改宽度并实时换行、拖框体移动位置。传 `false` 可关闭该交互。需 `enableTitle: true` |
 | `clampToImageBounds` | `boolean` | `true` | 绘制时将坐标约束在图片边界内（矩形/多边形/文本），避免存储负值或超界坐标；图片未加载时自动跳过，传 `false` 可关闭 |
 
 ### 绘制类型
@@ -142,6 +144,16 @@ drawer.deselectAnnotation();
 drawer.deleteSelectedAnnotation();
 drawer.moveSelectedAnnotation(dx, dy);
 
+// 导入 / 回填矩形、多边形（深拷贝、补 id/样式、按边界 clamp、自动布局标题）
+const saved = drawer.setAnnotations([
+  { type: 'rect', data: [{ start: { x: 10, y: 10 }, width: 100, height: 60 }], status: 'fullfilled', title: '人脸' }
+]);
+const added = drawer.addAnnotation({
+  type: 'polygon',
+  data: [{ point: { x: 10, y: 10 } }, { point: { x: 80, y: 10 } }, { point: { x: 40, y: 80 } }],
+  status: 'fullfilled'
+});
+
 // 获取数据
 const annotations = drawer.getAnnotations();
 const textAnnotations = drawer.getTextAnnotations();
@@ -181,6 +193,39 @@ drawer.setTextStyle({
 // 更新选中标注的样式
 drawer.updateSelectedAnnotationStyle();
 ```
+
+#### 标注标题
+
+```typescript
+// 设置 / 获取
+drawer.setAnnotationTitle(0, '这是一个很长的中文标题，会自动换行');
+drawer.getAnnotationTitle(0);
+
+// 全局样式 / 位置
+drawer.setTitleStyle({ font: 'bold 14px Arial', paddingX: 8, paddingY: 4 });
+drawer.setTitlePosition({ vertical: 'top', align: 'center' });
+
+// 单个标注：样式 / 位置 / 手动宽度（初始显示画布像素）
+drawer.setAnnotationTitleStyle(0, { color: '#FFD700' });
+drawer.setAnnotationTitlePosition(0, { vertical: 'bottom', width: 160 });
+
+// 恢复自动布局（清掉手动宽度/位置）
+drawer.resetAnnotationTitleLayout(0);
+
+// 原地修改标注坐标 / 字体 / 标题文案后强制重排
+drawer.refreshTitleLayouts();
+```
+
+标题布局规则：
+
+- **自动换行**：外置标题（上方 / 下方）最多和图片同宽，内部标题最多和标注框同宽；超出按宽度折行，中文逐字断、英文优先在空格断。
+- **垂直兜底**：先放上方，放不下放下方；上下都放不下（如和图片等高的标注）放到标注内部顶边（`vertical: 'inside-top'`）。
+- **不截断**：所有文字都会绘制；内部标题文字过多时会向下生长，优先保证可见。
+- **手动调整**：选中标注后，拖右边缘把手改宽度（实时换行），拖框体移动位置；手动调整过的标题不再参与自动兜底，用 `resetAnnotationTitleLayout()` 恢复。
+- **导入即用**：`setAnnotations()` / `addAnnotation()` / 反序列化进来的标注，会在下一次渲染时自动补算标题布局；直接改 `recordList` 的数据同理。
+- 单行标题的框高与旧版本一致，现有观感不变。
+
+> `TitlePosition.offsetX / offsetY / width` 的单位都是「初始显示比例下的画布像素」，缩放与导出时按同一倍率换算。
 
 #### 导出
 ```typescript
@@ -269,6 +314,14 @@ const drawer = new Drawer({
 
 // 需要时手动添加事件
 drawer.addEventListeners();
+
+// 订阅标注变更事件
+drawer.on('create', ({ id, type, index, data }) => { ... }); // 新增
+drawer.on('update', ({ id, type, index, data }) => { ... }); // 移动/缩放/标题/样式变化
+drawer.on('delete', ({ id, type, index, data }) => { ... }); // 删除
+drawer.on('load', ({ annotations }) => { ... });              // setAnnotations 批量导入
+drawer.on('clear', () => { ... });                            // 清空
+drawer.on('undo', () => { ... });                             // 撤销
 ```
 
 ### TypeScript 支持

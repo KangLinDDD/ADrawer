@@ -174,10 +174,14 @@
         <label style="display: block; margin-top: 6px;">Allow double-click editing
           <input type="checkbox" id="title-editing-toggle" checked onchange="toggleTitleEditing()" style="margin-left: 8px; vertical-align: middle;">
         </label>
+        <label style="display: block; margin-top: 6px;">Allow title dragging
+          <input type="checkbox" id="title-drag-toggle" checked onchange="toggleTitleDragging()" style="margin-left: 8px; vertical-align: middle;">
+        </label>
         <div class="toolbar-row">
           <input type="text" id="title-input" placeholder="Enter title..." style="width: 120px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
           <button onclick="setTitle()" id="btn-set-title" disabled>Set</button>
           <button onclick="clearTitle()" id="btn-clear-title" disabled>Clear</button>
+          <button onclick="resetTitleLayout()" id="btn-reset-title" disabled>Reset layout</button>
         </div>
         <div class="toolbar-row" style="margin-top: 6px;">
           <select id="title-font" onchange="updateTitleStyle()" style="width: 80px;">
@@ -195,7 +199,7 @@
           </select>
           <input type="text" id="title-placeholder" value="Enter title..." onchange="updateTitleStyle()" title="Title input placeholder" style="width: 100px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
         </div>
-        <span style="font-size: 11px; color: #888; margin-top: 4px;">Select annotation, double-click to quick-edit. Placeholder changes only affect annotations titled afterwards.</span>
+        <span style="font-size: 11px; color: #888; margin-top: 4px;">Select an annotation, then drag the title's right edge to resize (live re-wrap) or drag the box body to move it. Double-click to quick-edit.</span>
       </div>
     </div>
 
@@ -334,6 +338,7 @@
       const clearBtn = document.getElementById('btn-clear-title');
       setBtn.disabled = !isShape;
       clearBtn.disabled = !isShape;
+      document.getElementById('btn-reset-title').disabled = !isShape;
       
       // Show current title if annotation is selected
       if (isShape) {
@@ -409,6 +414,20 @@
       const enabled = document.getElementById('title-editing-toggle').checked;
       drawer.annotationManager.titleEditable = enabled;
       drawer.render();
+    };
+
+    // Allow / forbid dragging the title box (right edge = resize, body = move)
+    window.toggleTitleDragging = () => {
+      const enabled = document.getElementById('title-drag-toggle').checked;
+      drawer.annotationManager.titleDraggable = enabled;
+      drawer.render();
+    };
+
+    // Restore automatic title layout for the selected annotation
+    window.resetTitleLayout = () => {
+      const selected = drawer.getSelectedAnnotation();
+      if (!selected || selected.type === 'text') return;
+      drawer.resetAnnotationTitleLayout(selected.index);
     };
 
     // Initial state

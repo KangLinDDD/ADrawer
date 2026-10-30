@@ -13,9 +13,10 @@ import type { ShapeRenderStrategy } from './renderers/shape-renderer'
 import { RectRenderer } from './renderers/rect-renderer'
 import { PolygonRenderer } from './renderers/polygon-renderer'
 import { drawTextAnnotations } from './renderers/text-renderer'
-import { computeTitleBox } from './renderers/title-layout'
+import { computeTitleBox, computeTitleTextLayout } from './renderers/title-layout'
 import { DEFAULT_TITLE_GAP } from './renderers/title-layout'
-import { parseFontSize, scaleFont, scalePx, scaleStrokePx } from './renderers/export-scale'
+import { DEFAULT_TITLE_PADDING_X, DEFAULT_TITLE_PADDING_Y } from './renderers/title-layout'
+import { scaleFont, scalePx, scaleStrokePx } from './renderers/export-scale'
 
 export class Renderer {
   /** 形状渲染策略表 */
@@ -37,6 +38,9 @@ export class Renderer {
    * 主渲染方法
    */
   render(bgImage: HTMLImageElement | null): void {
+    // 绘制前补齐「业务注入 / 反序列化」标注的标题布局（每个对象只算一次）
+    this.annotationManager.ensureTitleLayouts()
+
     // 清除画布
     this.ctx.clearRect(0, 0, this.viewport.width, this.viewport.height)
 
@@ -70,7 +74,7 @@ export class Renderer {
    */
   private drawAnnotations(): void {
     // 绘制已完成标注 - 每个标注始终使用自己的样式
-    this.annotationManager.recordList.forEach((item) => {
+    this.annotationManager.recordList.forEach((item, index) => {
       // 获取标注保存的样式
       const style = this.annotationManager.getAnnotationStyle(item)
 
@@ -88,7 +92,7 @@ export class Renderer {
 
       // 绘制标题（如果存在且启用标题功能）
       if (this.annotationManager.enableTitle && item.title) {
-        this.drawAnnotationTitle(item)
+        this.drawAnnotationTitle(item, index)
       }
     })
 
@@ -137,58 +141,65 @@ export class Renderer {
   }
 
   /**
-   * 绘制标注标题
+   * 绘制标注标题（支持按宽度自动换行 + 选中态拖拽提示）
    * @param annotation - 标注操作记录
+   * @param index - 标注索引（用于判断选中态）
    */
-  private drawAnnotationTitle(annotation: Operate<Rect | Polygon>): void {
-    if (!annotation.title) return
+  private drawAnnotationTitle(annotation: Operate<Rect | Polygon>, index: number): void {
+    const data = this.annotationManager.computeTitleRenderData(annotation, (text, font) => {
+      this.ctx.font = font
+      return this.ctx.measureText(text).width
+    })
+    if (!data) return
 
+    const { layout, x: bgX, y: bgY, font, paddingX, paddingY } = data
     const titleStyle = this.annotationManager.getEffectiveTitleStyle(annotation)
-    const titlePos = this.annotationManager.getEffectiveTitlePosition(annotation)
-
-    const font = titleStyle.font || '12px Arial'
     const color = titleStyle.color || '#FFFFFF'
     const bgColor = titleStyle.backgroundColor || 'rgba(0, 0, 0, 0.7)'
-    const paddingX = titleStyle.paddingX ?? 6
-    const paddingY = titleStyle.paddingY ?? 3
     const borderRadius = titleStyle.borderRadius ?? 4
 
     this.ctx.save()
     this.ctx.font = font
 
-    const textMetrics = this.ctx.measureText(annotation.title)
-    const textWidth = textMetrics.width
-    // 从字体字符串中提取字号
-    const textHeight = parseFontSize(font)
-
-    // 计算标注参考位置（画布坐标；非 rect 一律走 polygon 锚定，与原 else 分支一致）
-    const strategy = annotation.type === "rect" ? this.shapeRenderers.rect : this.shapeRenderers.polygon
-    const anchor = strategy.getTitleAnchor(annotation, this.viewport)
-    if (!anchor) { this.ctx.restore(); return }
-
-    const bgW = textWidth + paddingX * 2
-    const bgH = textHeight + paddingY * 2
-
-    // 固定位置绘制：位置已在设置标题时按图片初始尺寸决定并写回，此处不再按视口边界重算
-    const { x: bgX, y: bgY } = computeTitleBox({
-      anchor,
-      boxWidth: bgW,
-      boxHeight: bgH,
-      position: titlePos
-    })
-
     // 绘制背景
     this.ctx.fillStyle = bgColor
     this.ctx.setLineDash([])
     this.ctx.beginPath()
-    this.ctx.roundRect(bgX, bgY, bgW, bgH, borderRadius)
+    this.ctx.roundRect(bgX, bgY, layout.boxWidth, layout.boxHeight, borderRadius)
     this.ctx.fill()
 
-    // 绘制标题文本
+    // 逐行绘制标题文本
     this.ctx.fillStyle = color
     this.ctx.textAlign = "left"
     this.ctx.textBaseline = "top"
-    this.ctx.fillText(annotation.title, bgX + paddingX, bgY + paddingY)
+    layout.lines.forEach((line, lineIndex) => {
+      this.ctx.fillText(
+        line,
+        bgX + paddingX,
+        bgY + paddingY + lineIndex * layout.lineHeight
+      )
+    })
+
+    // 选中态：虚线边框 + 右边缘把手（不导出）
+    const selected = this.annotationManager.selectedAnnotation
+    if (
+      this.annotationManager.titleDraggable &&
+      selected &&
+      selected.index === index
+    ) {
+      const color = this.annotationManager.selectionStyle.strokeColor
+      this.ctx.save()
+      this.ctx.setLineDash([4, 3])
+      this.ctx.lineWidth = 1
+      this.ctx.strokeStyle = color
+      this.ctx.strokeRect(bgX + 0.5, bgY + 0.5, layout.boxWidth - 1, layout.boxHeight - 1)
+      this.ctx.setLineDash([])
+      if (selected.locked !== true) {
+        this.ctx.fillStyle = color
+        this.ctx.fillRect(bgX + layout.boxWidth - 3, bgY + layout.boxHeight / 2 - 10, 6, 20)
+      }
+      this.ctx.restore()
+    }
 
     this.ctx.restore()
   }
@@ -287,67 +298,93 @@ export class Renderer {
 
     // 绘制标注标题（导出模式 - 仅在启用时）
     if (this.annotationManager.enableTitle) {
+      this.annotationManager.ensureTitleLayouts()
+      const s = this.viewport.initialScale > 0
+        ? this.viewport.initialScale
+        : this.viewport.scale > 0
+          ? this.viewport.scale
+          : 1
+      const imageWidth = originalWidth * s * ratio
+
       this.annotationManager.recordList.forEach((item) => {
-      if (!item.title) return
+        if (!item.title) return
 
-      const titleStyle = this.annotationManager.getEffectiveTitleStyle(item)
-      const titlePos = this.annotationManager.getEffectiveTitlePosition(item)
+        const titleStyle = this.annotationManager.getEffectiveTitleStyle(item)
+        const titlePos = this.annotationManager.getEffectiveTitlePosition(item)
 
-      const color = titleStyle.color || '#FFFFFF'
-      const bgColor = titleStyle.backgroundColor || 'rgba(0, 0, 0, 0.7)'
-      // 字号、内边距、圆角都按倍率放大（字号同时也决定标题框高度）
-      const font = scaleFont(titleStyle.font || '12px Arial', ratio)
-      const paddingX = scalePx(titleStyle.paddingX ?? 6, ratio)
-      const paddingY = scalePx(titleStyle.paddingY ?? 3, ratio)
-      const borderRadius = scalePx(titleStyle.borderRadius ?? 4, ratio)
+        const color = titleStyle.color || '#FFFFFF'
+        const bgColor = titleStyle.backgroundColor || 'rgba(0, 0, 0, 0.7)'
+        // 字号、内边距、圆角都按倍率放大（字号同时也决定标题框高度）
+        const font = scaleFont(titleStyle.font || '12px Arial', ratio)
+        const paddingX = scalePx(titleStyle.paddingX ?? DEFAULT_TITLE_PADDING_X, ratio)
+        const paddingY = scalePx(titleStyle.paddingY ?? DEFAULT_TITLE_PADDING_Y, ratio)
+        const borderRadius = scalePx(titleStyle.borderRadius ?? 4, ratio)
 
-      ctx.font = font
+        ctx.font = font
 
-      const textMetrics = ctx.measureText(item.title)
-      const textWidth = textMetrics.width
-      const textHeight = parseFontSize(font)
+        // 计算标注参考位置（原始图像坐标；非 rect 一律走 polygon 锚定）
+        const strategy = item.type === "rect" ? this.shapeRenderers.rect : this.shapeRenderers.polygon
+        const anchor = strategy.getTitleAnchor(item)
+        if (!anchor) return
 
-      // 计算标注参考位置（原始图像坐标；非 rect 一律走 polygon 锚定，与原 else 分支一致）
-      const strategy = item.type === "rect" ? this.shapeRenderers.rect : this.shapeRenderers.polygon
-      const anchor = strategy.getTitleAnchor(item)
-      if (!anchor) return
+        const layout = computeTitleTextLayout(item.title, {
+          font,
+          paddingX,
+          paddingY,
+          vertical: titlePos.vertical,
+          imageWidth,
+          annotationWidth: anchor.width * s * ratio,
+          manualWidth:
+            titlePos.width != null ? scalePx(titlePos.width, ratio) : undefined,
+          measure: (text: string) => ctx.measureText(text).width
+        })
 
-      const bgW = textWidth + paddingX * 2
-      const bgH = textHeight + paddingY * 2
+        // 固定位置绘制：位置已在设置标题时按图片初始尺寸决定并写回，此处不再按边界重算；
+        // 其中存下来的偏移量与标题间距都是「画布像素」，导出时同样按倍率换算
+        const box = computeTitleBox({
+          anchor,
+          boxWidth: layout.boxWidth,
+          boxHeight: layout.boxHeight,
+          position: {
+            ...titlePos,
+            offsetX: scalePx(titlePos.offsetX ?? 0, ratio),
+            offsetY: scalePx(titlePos.offsetY ?? 0, ratio)
+          },
+          gap: scalePx(DEFAULT_TITLE_GAP, ratio)
+        })
 
-      // 固定位置绘制：位置已在设置标题时按图片初始尺寸决定并写回，此处不再按边界重算；
-      // 其中存下来的偏移量与标题间距都是「画布像素」，导出时同样按倍率换算
-      const { x: bgX, y: bgY } = computeTitleBox({
-        anchor,
-        boxWidth: bgW,
-        boxHeight: bgH,
-        position: {
-          ...titlePos,
-          offsetX: scalePx(titlePos.offsetX ?? 0, ratio),
-          offsetY: scalePx(titlePos.offsetY ?? 0, ratio)
-        },
-        gap: scalePx(DEFAULT_TITLE_GAP, ratio)
+        // 内部标题超出图片底边时整体上移，不截断文字
+        const maxY = originalHeight - layout.boxHeight
+        const bgY = titlePos.vertical === 'inside-top' && maxY >= 0
+          ? Math.min(Math.max(box.y, 0), maxY)
+          : box.y
+        const bgX = box.x
+
+        ctx.fillStyle = bgColor
+        const roundRectCtx = ctx as unknown as {
+          roundRect: (x: number, y: number, w: number, h: number, r: number) => void
+        }
+        if (roundRectCtx.roundRect) {
+          // 同文本标注：必须先 beginPath，否则这次 fill() 会把之前所有标题框重填一遍，
+          // 把先画的标题文字盖成半透明残影（第一个标题最严重）。
+          ctx.beginPath()
+          roundRectCtx.roundRect(bgX, bgY, layout.boxWidth, layout.boxHeight, borderRadius)
+          ctx.fill()
+        } else {
+          ctx.fillRect(bgX, bgY, layout.boxWidth, layout.boxHeight)
+        }
+
+        ctx.fillStyle = color
+        ctx.textAlign = "left"
+        ctx.textBaseline = "top"
+        layout.lines.forEach((line, lineIndex) => {
+          ctx.fillText(
+            line,
+            bgX + paddingX,
+            bgY + paddingY + lineIndex * layout.lineHeight
+          )
+        })
       })
-
-      ctx.fillStyle = bgColor
-      const roundRectCtx = ctx as unknown as {
-        roundRect: (x: number, y: number, w: number, h: number, r: number) => void
-      }
-      if (roundRectCtx.roundRect) {
-        // 同文本标注：必须先 beginPath，否则这次 fill() 会把之前所有标题框重填一遍，
-        // 把先画的标题文字盖成半透明残影（第一个标题最严重）。
-        ctx.beginPath()
-        roundRectCtx.roundRect(bgX, bgY, bgW, bgH, borderRadius)
-        ctx.fill()
-      } else {
-        ctx.fillRect(bgX, bgY, bgW, bgH)
-      }
-
-      ctx.fillStyle = color
-      ctx.textAlign = "left"
-      ctx.textBaseline = "top"
-      ctx.fillText(item.title, bgX + paddingX, bgY + paddingY)
-    })
     }
   }
 }
